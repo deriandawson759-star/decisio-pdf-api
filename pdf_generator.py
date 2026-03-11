@@ -51,20 +51,60 @@ WHITE       = colors.white
 # ═══ HELPERS ════════════════════════════════════════════════
 EMOJI_CLEAN = {
     '🏆':'','⚡':'','🔴':'','🟡':'','🟢':'','🎯':'',
-    '🛑':'STOP','🔄':'PIVOT','✅':'OK','→':'→','←':'←',
-    '€':'EUR','™':'TM','°':'','«':'"','»':'"',
-    '–':'-','—':'-','…':'...','•':'·',
+    '🛑':'STOP','🔄':'PIVOT','✅':'OK',
+    # Flèches → conserver en ASCII
+    '→':'->','←':'<-','↑':'^','↓':'v',
+    # Monnaie et marques
+    '€':'EUR','™':'TM','®':'(R)',
+    # Typographie
+    '\u2212':'-',   # − signe moins mathématique
+    '\u2013':'-',   # – tiret demi-cadratin
+    '\u2014':'-',   # — tiret cadratin
+    '\u2026':'...', # … points de suspension
+    '\u00b0':'',    # ° degré
+    '\u00ab':'"',   # «
+    '\u00bb':'"',   # »
+    '\u2018':"'",   # ' guillemet gauche
+    '\u2019':"'",   # ' guillemet droit
+    '\u201c':'"',   # " guillemet gauche double
+    '\u201d':'"',   # " guillemet droit double
+    '\u2022':'*',   # • bullet
+    '\u00b7':'*',   # · point médian
+    '\u00d7':'x',   # × multiplication
+    '\u00f7':'/',   # ÷ division
+    '\u2264':'<=',  # ≤
+    '\u2265':'>=',  # ≥
+    '\u00e0':'a','\u00e2':'a','\u00e4':'a',  # à â ä
+    '\u00e8':'e','\u00e9':'e','\u00ea':'e','\u00eb':'e',  # è é ê ë
+    '\u00ee':'i','\u00ef':'i',  # î ï
+    '\u00f4':'o','\u00f6':'o',  # ô ö
+    '\u00f9':'u','\u00fb':'u','\u00fc':'u',  # ù û ü
+    '\u00e7':'c',   # ç
+    '\u00c0':'A','\u00c2':'A',  # À Â
+    '\u00c8':'E','\u00c9':'E','\u00ca':'E',  # È É Ê
+    '\u00ce':'I',   # Î
+    '\u00d4':'O',   # Ô
+    '\u00d9':'U','\u00db':'U',  # Ù Û
+    '\u00c7':'C',   # Ç
+    '\u0152':'OE','\u0153':'oe', # Œ œ
 }
+
 def clean(s):
     s = str(s)
-    for k,v in EMOJI_CLEAN.items(): s = s.replace(k,v)
-    return s.encode('latin-1','replace').decode('latin-1')
+    for k, v in EMOJI_CLEAN.items():
+        s = s.replace(k, v)
+    # Supprimer tout caractère non-ASCII restant
+    s = s.encode('ascii', 'ignore').decode('ascii')
+    return s
 
 def strip_md(s):
     s = clean(s)
-    s = re.sub(r'\*\*(.*?)\*\*',r'\1',s)
-    s = re.sub(r'\*(.*?)\*',r'\1',s)
-    s = re.sub(r'^#{1,4}\s+','',s)
+    s = re.sub(r'\*\*(.*?)\*\*', r'\1', s)
+    s = re.sub(r'\*(.*?)\*', r'\1', s)
+    s = re.sub(r'^#{1,4}\s+', '', s)
+    s = re.sub(r'^[-*>]+\s*', '', s)  # retire prefixes markdown
+    # Nettoyer les caracteres de controle restants
+    s = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', s)
     return s.strip()
 
 def rich(s, style):
@@ -147,8 +187,8 @@ def styles():
 
 class SectionHeader(Flowable):
     """
-    Header H2 McKinsey : barre pleine couleur à gauche (5px),
-    texte MAJUSCULE espacé, fond blanc, underscore couleur
+    Header H2 McKinsey : barre pleine couleur a gauche (5px),
+    texte MAJUSCULE propre, fond legerement teinte, ligne couleur bas
     """
     def __init__(self, text, accent, width=CW):
         self.text = strip_md(text).upper()
@@ -158,20 +198,15 @@ class SectionHeader(Flowable):
 
     def draw(self):
         c = self.canv
-        # Fond très légèrement coloré
         c.setFillColor(BG_STRIP)
         c.rect(0, 0, self.w, 11*mm, fill=1, stroke=0)
-        # Barre accent épaisse
         c.setFillColor(self.accent)
         c.rect(0, 0, 5, 11*mm, fill=1, stroke=0)
-        # Ligne bas accent
         c.setFillColor(self.accent)
         c.rect(0, 0, self.w, 1.5, fill=1, stroke=0)
-        # Texte
         c.setFillColor(NAVY)
         c.setFont('Helvetica-Bold', 11)
-        # Letter-spacing simulé avec espaces
-        txt = '  '.join(self.text[:50])[:80]
+        txt = self.text[:70]
         c.drawString(11, 11*mm/2 - 3.5, txt)
 
     def wrap(self, aW, aH): return (aW, 11*mm)
@@ -405,7 +440,7 @@ def pro_table(headers, rows, ratios=None):
     for row in rows:
         dr = []
         for cell in row:
-            txt = clean(str(cell))
+            txt = strip_md(str(cell))
             col = cell_color(txt)
             bold = col != CHARCOAL
             ps = ParagraphStyle('tdc', fontName='Helvetica-Bold' if bold else 'Helvetica',
@@ -699,9 +734,13 @@ def parse(text, ST):
             i += 1; continue
 
         # ── BLOCKQUOTE (Pourquoi) ──
-        if line.startswith('>'):
-            txt = strip_md(line[1:].strip())
-            is_pourquoi = 'pourquoi' in txt.lower()
+        if line.startswith('>') or line.startswith('->'):
+            # Enlever le prefixe > ou ->
+            if line.startswith('->'):
+                txt = strip_md(line[2:].strip())
+            else:
+                txt = strip_md(line[1:].strip())
+            is_pourquoi = 'pourquoi' in txt.lower() or 'pourquoi' in line.lower()
             t = Table([[Paragraph(txt,
                 ParagraphStyle('bq',
                     fontName='Helvetica-BoldOblique' if is_pourquoi else 'Helvetica-Oblique',
