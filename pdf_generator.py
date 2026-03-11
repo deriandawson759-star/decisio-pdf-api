@@ -920,11 +920,11 @@ def generate_pdf(report_text, nom, secteur, mode, date_str=None):
         date_str = datetime.now().strftime('%d %B %Y')
     labels = {
         'flash': 'AUDIT FLASH  |  490 EUR',
-        'premium': 'AUDIT STRATEGIQUE PREMIUM  |  2 490 EUR',
+        'premium': 'AUDIT STRATÉGIQUE PREMIUM  •  2 490 €',
         'transformation': 'AUDIT TRANSFORMATION  |  6 900 EUR',
         'diagnostic': 'DIAGNOSTIC GRATUIT',
     }
-    mode_label = labels.get(mode, 'AUDIT STRATEGIQUE PREMIUM  |  2 490 EUR')
+    mode_label = labels.get(mode, 'AUDIT STRATÉGIQUE PREMIUM  •  2 490 €')
 
     # ── COUVERTURE ──
     register_fonts()  # Assurer polices dispo pour canvas
@@ -940,7 +940,7 @@ def generate_pdf(report_text, nom, secteur, mode, date_str=None):
     # Titre rapport (page 2)
     story.append(Spacer(1, 5*mm))
     story.append(Paragraph(
-        'RAPPORT D\'AUDIT STRATEGIQUE — METHODE D3(TM)',
+        'RAPPORT D\'AUDIT STRATÉGIQUE — MÉTHODE D3™',
         ParagraphStyle('rt', fontName='LS-Bold', fontSize=13,
             textColor=NAVY, leading=18, alignment=TA_CENTER)))
     story.append(Paragraph(
@@ -958,7 +958,7 @@ def generate_pdf(report_text, nom, secteur, mode, date_str=None):
     story.append(HRFlowable(width=CW, thickness=1.5, color=NAVY))
     story.append(Spacer(1, 3*mm))
     story.append(Paragraph(
-        'Rapport strictement confidentiel — DECISIO AGENCY  |  Methode D3(TM)  |  contact@decisio.agency',
+        'Rapport strictement confidentiel — DECISIO AGENCY  |  Méthode D3™  |  contact@decisio.agency',
         ParagraphStyle('fin', fontName='LS-Italic', fontSize=7.5,
             textColor=LIGHT_GREY, alignment=TA_CENTER)))
 
