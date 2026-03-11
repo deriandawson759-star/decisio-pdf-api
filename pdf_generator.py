@@ -17,7 +17,25 @@ from reportlab.platypus import (
 )
 from reportlab.platypus.flowables import Flowable
 from reportlab.pdfgen import canvas as pdf_canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from pypdf import PdfReader, PdfWriter
+
+# ═══ ENREGISTREMENT POLICES TTF (Liberation Sans = Arial + accents complets) ═══
+_FONTS_REGISTERED = False
+def register_fonts():
+    global _FONTS_REGISTERED
+    if _FONTS_REGISTERED:
+        return
+    base = '/usr/share/fonts/truetype/liberation/'
+    pdfmetrics.registerFont(TTFont('LS',          base + 'LiberationSans-Regular.ttf'))
+    pdfmetrics.registerFont(TTFont('LS-Bold',     base + 'LiberationSans-Bold.ttf'))
+    pdfmetrics.registerFont(TTFont('LS-Italic',   base + 'LiberationSans-Italic.ttf'))
+    pdfmetrics.registerFont(TTFont('LS-BoldItalic', base + 'LiberationSans-BoldItalic.ttf'))
+    from reportlab.pdfbase.pdfmetrics import registerFontFamily
+    registerFontFamily('LS', normal='LS', bold='LS-Bold',
+                       italic='LS-Italic', boldItalic='LS-BoldItalic')
+    _FONTS_REGISTERED = True
 
 W, H = A4
 ML = 21*mm
@@ -50,52 +68,57 @@ WHITE       = colors.white
 
 # ═══ HELPERS ════════════════════════════════════════════════
 EMOJI_CLEAN = {
-    '🏆':'','⚡':'','🔴':'','🟡':'','🟢':'','🎯':'',
-    '🛑':'STOP','🔄':'PIVOT','✅':'OK',
-    # Flèches → conserver en ASCII
-    '→':'->','←':'<-','↑':'^','↓':'v',
-    # Monnaie et marques
-    '€':'EUR','™':'TM','®':'(R)',
-    # Typographie
-    '\u2212':'-',   # − signe moins mathématique
-    '\u2013':'-',   # – tiret demi-cadratin
-    '\u2014':'-',   # — tiret cadratin
-    '\u2026':'...', # … points de suspension
-    '\u00b0':'',    # ° degré
-    '\u00ab':'"',   # «
-    '\u00bb':'"',   # »
-    '\u2018':"'",   # ' guillemet gauche
-    '\u2019':"'",   # ' guillemet droit
-    '\u201c':'"',   # " guillemet gauche double
-    '\u201d':'"',   # " guillemet droit double
-    '\u2022':'*',   # • bullet
-    '\u00b7':'*',   # · point médian
-    '\u00d7':'x',   # × multiplication
-    '\u00f7':'/',   # ÷ division
-    '\u2264':'<=',  # ≤
-    '\u2265':'>=',  # ≥
-    '\u00e0':'a','\u00e2':'a','\u00e4':'a',  # à â ä
-    '\u00e8':'e','\u00e9':'e','\u00ea':'e','\u00eb':'e',  # è é ê ë
-    '\u00ee':'i','\u00ef':'i',  # î ï
-    '\u00f4':'o','\u00f6':'o',  # ô ö
-    '\u00f9':'u','\u00fb':'u','\u00fc':'u',  # ù û ü
-    '\u00e7':'c',   # ç
-    '\u00c0':'A','\u00c2':'A',  # À Â
-    '\u00c8':'E','\u00c9':'E','\u00ca':'E',  # È É Ê
-    '\u00ce':'I',   # Î
-    '\u00d4':'O',   # Ô
-    '\u00d9':'U','\u00db':'U',  # Ù Û
-    '\u00c7':'C',   # Ç
-    '\u0152':'OE','\u0153':'oe', # Œ œ
+    # Emojis → supprimer
+    '🏆':'', '⚡':'', '🔴':'', '🟡':'', '🟢':'', '🎯':'',
+    '🛑':'STOP', '🔄':'PIVOT', '✅':'OK',
+    # Flèches → ASCII
+    '→':'->', '←':'<-', '↑':'^', '↓':'v',
+    # Marques
+    '™':'(TM)', '®':'(R)',
+    # Typographie — conserver le sens
+    '\u2212':'-',    # − signe moins mathématique
+    '\u2013':'-',    # – tiret demi-cadratin
+    '\u2014':' - ',  # — tiret cadratin
+    '\u2026':'...',  # … points de suspension
+    '\u2018':"'",    # ' guillemet gauche
+    '\u2019':"'",    # ' guillemet droit
+    '\u201c':'"',    # " guillemet gauche double
+    '\u201d':'"',    # " guillemet droit double
+    '\u00d7':'x',    # × multiplication
+    '\u00f7':'/',    # ÷ division
+    '\u2264':'<=',   # ≤
+    '\u2265':'>=',   # ≥
+    # GARDER les accents français — Liberation Sans les supporte
+    # NE PAS encoder/supprimer les caractères latins étendus
 }
 
 def clean(s):
+    """Nettoyer le texte en préservant les accents français."""
     s = str(s)
     for k, v in EMOJI_CLEAN.items():
         s = s.replace(k, v)
-    # Supprimer tout caractère non-ASCII restant
-    s = s.encode('ascii', 'ignore').decode('ascii')
-    return s
+    # Supprimer uniquement les caractères de contrôle et emojis restants
+    # GARDER tout le latin étendu (accents français, etc.)
+    result = []
+    for ch in s:
+        cp = ord(ch)
+        # Garder : ASCII imprimable + Latin étendu (0x00C0-0x024F) + espaces
+        if (0x20 <= cp <= 0x7E) or (0x00C0 <= cp <= 0x024F) or ch in ('\n', '\t'):
+            result.append(ch)
+        elif cp == 0x20AC:  # €
+            result.append('EUR')
+        elif cp == 0x00B0:  # °
+            result.append('')
+        elif cp == 0x00AB:  # «
+            result.append('"')
+        elif cp == 0x00BB:  # »
+            result.append('"')
+        elif cp == 0x00B7:  # ·
+            result.append('*')
+        elif cp == 0x2022:  # •
+            result.append('*')
+        # Ignorer le reste (emojis, CJK, etc.)
+    return ''.join(result)
 
 def strip_md(s):
     s = clean(s)
@@ -139,47 +162,47 @@ def styles():
     return {
         # Corps principal — Helvetica 10pt justifié, leading généreux
         'body': ParagraphStyle('body',
-            fontName='Helvetica', fontSize=10, textColor=CHARCOAL,
+            fontName='LS', fontSize=10, textColor=CHARCOAL,
             leading=16, spaceAfter=5, alignment=TA_JUSTIFY),
         # Labels clés — bold NAVY
         'label': ParagraphStyle('label',
-            fontName='Helvetica-Bold', fontSize=9.5, textColor=NAVY,
+            fontName='LS-Bold', fontSize=9.5, textColor=NAVY,
             leading=14, spaceAfter=2),
         # Valeur associée
         'value': ParagraphStyle('value',
-            fontName='Helvetica', fontSize=9.5, textColor=CHARCOAL,
+            fontName='LS', fontSize=9.5, textColor=CHARCOAL,
             leading=14, spaceAfter=2),
         # Note de bas / muted
         'muted': ParagraphStyle('muted',
-            fontName='Helvetica-Oblique', fontSize=8.5, textColor=MID_GREY,
+            fontName='LS-Italic', fontSize=8.5, textColor=MID_GREY,
             leading=12, spaceAfter=3),
         # Bullet
         'bullet': ParagraphStyle('bullet',
-            fontName='Helvetica', fontSize=10, textColor=CHARCOAL,
+            fontName='LS', fontSize=10, textColor=CHARCOAL,
             leading=15, spaceAfter=4, leftIndent=16, firstLineIndent=0),
         # H4 inline
         'h4': ParagraphStyle('h4',
-            fontName='Helvetica-Bold', fontSize=10.5, textColor=NAVY,
+            fontName='LS-Bold', fontSize=10.5, textColor=NAVY,
             leading=15, spaceBefore=6, spaceAfter=3),
         # Tableau header
         'th': ParagraphStyle('th',
-            fontName='Helvetica-Bold', fontSize=8.5, textColor=WHITE,
+            fontName='LS-Bold', fontSize=8.5, textColor=WHITE,
             leading=12, alignment=TA_LEFT),
         # Tableau cellule
         'td': ParagraphStyle('td',
-            fontName='Helvetica', fontSize=8.5, textColor=CHARCOAL,
+            fontName='LS', fontSize=8.5, textColor=CHARCOAL,
             leading=12),
         # Headline statement (résumé message clé en haut de section — style McKinsey)
         'headline': ParagraphStyle('headline',
-            fontName='Helvetica-BoldOblique', fontSize=10.5, textColor=NAVY,
+            fontName='LS-BoldItalic', fontSize=10.5, textColor=NAVY,
             leading=16, spaceAfter=6, leftIndent=6),
         # Footer
         'footer': ParagraphStyle('footer',
-            fontName='Helvetica', fontSize=7, textColor=LIGHT_GREY,
+            fontName='LS', fontSize=7, textColor=LIGHT_GREY,
             leading=10, alignment=TA_CENTER),
         # Message script
         'script': ParagraphStyle('script',
-            fontName='Helvetica-Oblique', fontSize=9.5, textColor=DARK_GREY,
+            fontName='LS-Italic', fontSize=9.5, textColor=DARK_GREY,
             leading=15, spaceAfter=3),
     }
 
@@ -205,7 +228,7 @@ class SectionHeader(Flowable):
         c.setFillColor(self.accent)
         c.rect(0, 0, self.w, 1.5, fill=1, stroke=0)
         c.setFillColor(NAVY)
-        c.setFont('Helvetica-Bold', 11)
+        c.setFont('LS-Bold', 11)
         txt = self.text[:70]
         c.drawString(11, 11*mm/2 - 3.5, txt)
 
@@ -223,7 +246,7 @@ class SubHeader(Flowable):
     def draw(self):
         c = self.canv
         c.setFillColor(self.accent)
-        c.setFont('Helvetica-Bold', 10.5)
+        c.setFont('LS-Bold', 10.5)
         c.drawString(0, 6, self.text[:80])
         # Ligne accent sous le titre
         text_w = min(len(self.text) * 5.5, self.w * 0.75)
@@ -260,11 +283,11 @@ class KeyInsight(Flowable):
         c.rect(0, 0, 4, h, fill=1, stroke=0)
         # Label
         c.setFillColor(self.accent)
-        c.setFont('Helvetica-Bold', 7.5)
+        c.setFont('LS-Bold', 7.5)
         c.drawString(11, h - 13, self.label.upper())
         # Texte
         c.setFillColor(CHARCOAL)
-        c.setFont('Helvetica-Oblique', 9.5)
+        c.setFont('LS-Italic', 9.5)
         words = self.text.split()
         line = ''; y = h - 25
         cpl = int((self.w - 22) / 5.0)
@@ -304,11 +327,11 @@ class VeritefBlock(Flowable):
         c.rect(0, 0, 4, h, fill=1, stroke=0)
         # Label
         c.setFillColor(GOLD_ACC)
-        c.setFont('Helvetica-Bold', 7.5)
+        c.setFont('LS-Bold', 7.5)
         c.drawString(12, h - 14, 'VERITE FONDAMENTALE')
         # Texte
         c.setFillColor(NAVY)
-        c.setFont('Helvetica-BoldOblique', 9.5)
+        c.setFont('LS-BoldItalic', 9.5)
         words = self.text.split()
         line = ''; y = h - 28
         cpl = int((self.w - 24) / 5.1)
@@ -342,15 +365,15 @@ class MessageCard(Flowable):
         c.roundRect(0, 0, self.w, h, 2*mm, fill=0, stroke=1)
         # Guillemet décoratif
         c.setFillColor(BLUE_ACC)
-        c.setFont('Helvetica-Bold', 28)
+        c.setFont('LS-Bold', 28)
         c.drawString(8, h - 22, '"')
         # Label
         c.setFillColor(BLUE_ACC)
-        c.setFont('Helvetica-Bold', 8)
+        c.setFont('LS-Bold', 8)
         c.drawString(24, h - 14, self.label)
         # Texte
         c.setFillColor(CHARCOAL)
-        c.setFont('Helvetica-Oblique', 9)
+        c.setFont('LS-Italic', 9)
         words = self.text.split(); line = ''; y = h - 28
         cpl = int((self.w - 24) / 4.9)
         for word in words:
@@ -392,25 +415,25 @@ class ScoreCard(Flowable):
         c.rect(4, 0, 4, h, fill=1, stroke=0)
         # Lettre option
         c.setFillColor(WHITE)
-        c.setFont('Helvetica-Bold', 13)
+        c.setFont('LS-Bold', 13)
         c.drawCentredString(4, h/2 - 4, self.letter)
         # Badge score (droite)
         c.setFillColor(NAVY)
         c.roundRect(self.w - bw - 6, h/2 - 9*mm, bw, 18*mm, 2*mm, fill=1, stroke=0)
         c.setFillColor(GOLD_ACC)
-        c.setFont('Helvetica-Bold', 18)
+        c.setFont('LS-Bold', 18)
         score_display = self.score if '/' not in self.score else self.score.split('/')[0]
         c.drawCentredString(self.w - bw/2 - 6, h/2 - 2, score_display)
         c.setFillColor(LIGHT_GREY)
-        c.setFont('Helvetica', 7)
+        c.setFont('LS', 7)
         c.drawCentredString(self.w - bw/2 - 6, h/2 - 9, '/10')
         # Titre
         c.setFillColor(NAVY)
-        c.setFont('Helvetica-Bold', 10)
+        c.setFont('LS-Bold', 10)
         c.drawString(16, h - 12, self.title[:60])
         # Detail
         c.setFillColor(MID_GREY)
-        c.setFont('Helvetica', 8.5)
+        c.setFont('LS', 8.5)
         words = self.detail.split(); line = ''; y = h - 24
         cpl = int((self.w - bw - 28) / 4.8)
         for word in words:
@@ -443,7 +466,7 @@ def pro_table(headers, rows, ratios=None):
             txt = strip_md(str(cell))
             col = cell_color(txt)
             bold = col != CHARCOAL
-            ps = ParagraphStyle('tdc', fontName='Helvetica-Bold' if bold else 'Helvetica',
+            ps = ParagraphStyle('tdc', fontName='LS-Bold' if bold else 'Helvetica',
                 fontSize=8.5, textColor=col, leading=12)
             dr.append(Paragraph(txt, ps))
         data.append(dr)
@@ -484,7 +507,7 @@ def build_cover(c, nom, secteur, mode_label, date_str):
 
     # Logo DECISIO dans la bande — très grand, blanc
     c.setFillColor(WHITE)
-    c.setFont('Helvetica-Bold', 58)
+    c.setFont('LS-Bold', 58)
     c.drawString(ML, H - band_h + 62*mm, 'DECISIO')
 
     # Trait blanc fin sous DECISIO
@@ -495,7 +518,7 @@ def build_cover(c, nom, secteur, mode_label, date_str):
 
     # Sous-titre dans la bande
     c.setFillColor(GOLD_ACC)
-    c.setFont('Helvetica-Bold', 9)
+    c.setFont('LS-Bold', 9)
     c.drawString(ML, H - band_h + 48*mm, 'METHODE D3(TM)  |  FIRST PRINCIPLES  |  AI-POWERED 48H')
 
     # Confidentiel + mode en haut à droite dans la bande
@@ -504,23 +527,23 @@ def build_cover(c, nom, secteur, mode_label, date_str):
     c.roundRect(W - MR - 68*mm, H - band_h + 72*mm, 68*mm, 10*mm, 2*mm, fill=1, stroke=0)
     c.setFillAlpha(1.0)
     c.setFillColor(NAVY)
-    c.setFont('Helvetica-Bold', 7.5)
+    c.setFont('LS-Bold', 7.5)
     c.drawCentredString(W - MR - 34*mm, H - band_h + 76.5*mm, clean(mode_label))
 
     # ─── ZONE BLANCHE — INFO CLIENT ───────────────────────────
     # Nom client (grand, noir)
     c.setFillColor(NAVY)
-    c.setFont('Helvetica-Bold', 32)
+    c.setFont('LS-Bold', 32)
     c.drawString(ML, H - band_h - 24*mm, clean(nom))
 
     # Secteur
     c.setFillColor(MID_GREY)
-    c.setFont('Helvetica', 14)
+    c.setFont('LS', 14)
     c.drawString(ML, H - band_h - 34*mm, clean(secteur))
 
     # Date
     c.setFillColor(LIGHT_GREY)
-    c.setFont('Helvetica', 10)
+    c.setFont('LS', 10)
     c.drawString(ML, H - band_h - 43*mm, clean(date_str))
 
     # ─── LIGNE SÉPARATRICE ────────────────────────────────────
@@ -538,18 +561,18 @@ def build_cover(c, nom, secteur, mode_label, date_str):
         px = ML + i * (CW / 3)
         # Numéro
         c.setFillColor(GOLD_ACC)
-        c.setFont('Helvetica-Bold', 20)
+        c.setFont('LS-Bold', 20)
         c.drawString(px, py, num)
         # Trait
         c.setFillColor(GOLD_ACC)
         c.rect(px, py - 4, 22*mm, 1.5, fill=1, stroke=0)
         # Titre pilier
         c.setFillColor(NAVY)
-        c.setFont('Helvetica-Bold', 8.5)
+        c.setFont('LS-Bold', 8.5)
         c.drawString(px, py - 13, titre)
         # Description
         c.setFillColor(MID_GREY)
-        c.setFont('Helvetica', 7.5)
+        c.setFont('LS', 7.5)
         c.drawString(px, py - 22, desc[:35])
 
     # ─── LIGNE SÉPARATRICE 2 ─────────────────────────────────
@@ -558,7 +581,7 @@ def build_cover(c, nom, secteur, mode_label, date_str):
 
     # ─── NOTE CONFIDENTIELLE ─────────────────────────────────
     c.setFillColor(MID_GREY)
-    c.setFont('Helvetica', 8)
+    c.setFont('LS', 8)
     c.drawString(ML, H - band_h - 100*mm,
         'Ce rapport est strictement confidentiel et destine au seul usage du client designe ci-dessus.')
     c.drawString(ML, H - band_h - 109*mm,
@@ -570,10 +593,10 @@ def build_cover(c, nom, secteur, mode_label, date_str):
     c.setFillColor(GOLD_ACC)
     c.rect(0, 18*mm, W, 2, fill=1, stroke=0)
     c.setFillColor(WHITE)
-    c.setFont('Helvetica-Bold', 9)
+    c.setFont('LS-Bold', 9)
     c.drawString(ML, 7*mm, 'DECISIO AGENCY')
     c.setFillColor(LIGHT_GREY)
-    c.setFont('Helvetica', 7.5)
+    c.setFont('LS', 7.5)
     c.drawRightString(W - MR, 7*mm, 'decisio.agency  |  contact@decisio.agency')
 
 
@@ -606,7 +629,7 @@ class DecisioTemplate(SimpleDocTemplate):
         c.rect(0, H - 13*mm, W, 1.5, fill=1, stroke=0)
         # Logo
         c.setFillColor(WHITE)
-        c.setFont('Helvetica-Bold', 10.5)
+        c.setFont('LS-Bold', 10.5)
         c.drawString(ML, H - 8.5*mm, 'DECISIO')
         # Séparateur
         c.setFillColor(WHITE)
@@ -615,11 +638,11 @@ class DecisioTemplate(SimpleDocTemplate):
         c.setFillAlpha(1.0)
         # Méthode
         c.setFillColor(GOLD_ACC)
-        c.setFont('Helvetica', 7.5)
+        c.setFont('LS', 7.5)
         c.drawString(ML + 24*mm, H - 8.5*mm, 'METHODE D3(TM)')
         # Client (droite)
         c.setFillColor(colors.HexColor('#AAAAAA'))
-        c.setFont('Helvetica', 7)
+        c.setFont('LS', 7)
         c.drawRightString(W - MR, H - 8.5*mm, f'{self.nom}  |  {self.secteur}'[:65])
 
     def _footer(self):
@@ -628,11 +651,11 @@ class DecisioTemplate(SimpleDocTemplate):
         c.setLineWidth(0.5)
         c.line(ML, 13*mm, W - MR, 13*mm)
         c.setFillColor(LIGHT_GREY)
-        c.setFont('Helvetica', 6.5)
+        c.setFont('LS', 6.5)
         c.drawString(ML, 8*mm, 'CONFIDENTIEL — DECISIO AGENCY — decisio.agency')
         # Numéro de page avec style
         c.setFillColor(NAVY)
-        c.setFont('Helvetica-Bold', 8)
+        c.setFont('LS-Bold', 8)
         c.drawRightString(W - MR, 8*mm, f'— {self._pn} —')
 
 
@@ -642,7 +665,7 @@ def parse(text, ST):
     story = []
     i = 0
 
-    def sp(h=3): story.append(Spacer(1, h * mm))
+    def sp(h=2): story.append(Spacer(1, h * mm))
     def hr(color=RULE, w=0.5):
         story.append(HRFlowable(width=CW, thickness=w, color=color,
                                 spaceAfter=4, spaceBefore=4))
@@ -670,15 +693,15 @@ def parse(text, ST):
             if len(tl) >= 2:
                 n = len(tl[0])
                 story.append(pro_table(tl[0], tl[1:], [1/n]*n))
-                sp(4)
+                sp(3)
             continue
 
         # ── H1 ──
         if raw.startswith('# '):
             txt = strip_md(line[2:])
-            sp(5)
+            sp(3)
             t = Table([[Paragraph(f'<b>{txt}</b>',
-                ParagraphStyle('h1r', fontName='Helvetica-Bold', fontSize=14,
+                ParagraphStyle('h1r', fontName='LS-Bold', fontSize=14,
                     textColor=WHITE, leading=20))]],
                 colWidths=[CW])
             t.setStyle(TableStyle([
@@ -689,14 +712,14 @@ def parse(text, ST):
                 ('LINEABOVE', (0, 0), (-1, 0), 3, GOLD_ACC),
             ]))
             story.append(t)
-            sp(4)
+            sp(3)
             i += 1; continue
 
         # ── H2 ──
         if raw.startswith('## '):
             txt = strip_md(line[3:])
             acc = sec_accent(txt)
-            sp(6)
+            sp(3)
             story.append(KeepTogether([
                 SectionHeader(txt, acc),
                 Spacer(1, 4*mm)
@@ -707,7 +730,7 @@ def parse(text, ST):
         if raw.startswith('### '):
             txt = strip_md(line[4:])
             acc = sec_accent(txt)
-            sp(4)
+            sp(3)
             story.append(KeepTogether([
                 SubHeader(txt, acc),
                 Spacer(1, 3*mm)
@@ -743,7 +766,7 @@ def parse(text, ST):
             is_pourquoi = 'pourquoi' in txt.lower() or 'pourquoi' in line.lower()
             t = Table([[Paragraph(txt,
                 ParagraphStyle('bq',
-                    fontName='Helvetica-BoldOblique' if is_pourquoi else 'Helvetica-Oblique',
+                    fontName='LS-BoldItalic' if is_pourquoi else 'Helvetica-Oblique',
                     fontSize=9.5, textColor=CHARCOAL, leading=14))]],
                 colWidths=[CW - 6*mm])
             t.setStyle(TableStyle([
@@ -828,6 +851,7 @@ def parse(text, ST):
 
 # ═══ GENERATE ════════════════════════════════════════════════
 def generate_pdf(report_text, nom, secteur, mode, date_str=None):
+    register_fonts()
     if not date_str:
         date_str = datetime.now().strftime('%d %B %Y')
     labels = {
@@ -852,11 +876,11 @@ def generate_pdf(report_text, nom, secteur, mode, date_str=None):
     story.append(Spacer(1, 5*mm))
     story.append(Paragraph(
         'RAPPORT D\'AUDIT STRATEGIQUE — METHODE D3(TM)',
-        ParagraphStyle('rt', fontName='Helvetica-Bold', fontSize=13,
+        ParagraphStyle('rt', fontName='LS-Bold', fontSize=13,
             textColor=NAVY, leading=18, alignment=TA_CENTER)))
     story.append(Paragraph(
         f'{clean(nom)}  |  {clean(secteur)}  |  {clean(date_str)}',
-        ParagraphStyle('rs', fontName='Helvetica', fontSize=9,
+        ParagraphStyle('rs', fontName='LS', fontSize=9,
             textColor=MID_GREY, leading=13, alignment=TA_CENTER, spaceAfter=3)))
     story.append(HRFlowable(width=CW, thickness=2.5, color=NAVY,
                              spaceBefore=3, spaceAfter=3))
@@ -865,12 +889,12 @@ def generate_pdf(report_text, nom, secteur, mode, date_str=None):
 
     story += parse(report_text, ST)
 
-    story.append(Spacer(1, 10*mm))
+    story.append(Spacer(1, 5*mm))
     story.append(HRFlowable(width=CW, thickness=1.5, color=NAVY))
     story.append(Spacer(1, 3*mm))
     story.append(Paragraph(
         'Rapport strictement confidentiel — DECISIO AGENCY  |  Methode D3(TM)  |  contact@decisio.agency',
-        ParagraphStyle('fin', fontName='Helvetica-Oblique', fontSize=7.5,
+        ParagraphStyle('fin', fontName='LS-Italic', fontSize=7.5,
             textColor=LIGHT_GREY, alignment=TA_CENTER)))
 
     buf_content = BytesIO()
@@ -878,7 +902,7 @@ def generate_pdf(report_text, nom, secteur, mode, date_str=None):
         buf_content, nom, secteur,
         pagesize=A4,
         leftMargin=ML, rightMargin=MR,
-        topMargin=15*mm, bottomMargin=17*mm,
+        topMargin=13*mm, bottomMargin=15*mm,
     )
     tpl.build(story)
 
