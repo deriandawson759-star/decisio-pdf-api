@@ -27,11 +27,16 @@ def register_fonts():
     global _FONTS_REGISTERED
     if _FONTS_REGISTERED:
         return
-    base = '/usr/share/fonts/truetype/liberation/'
-    pdfmetrics.registerFont(TTFont('LS',          base + 'LiberationSans-Regular.ttf'))
-    pdfmetrics.registerFont(TTFont('LS-Bold',     base + 'LiberationSans-Bold.ttf'))
-    pdfmetrics.registerFont(TTFont('LS-Italic',   base + 'LiberationSans-Italic.ttf'))
-    pdfmetrics.registerFont(TTFont('LS-BoldItalic', base + 'LiberationSans-BoldItalic.ttf'))
+    import os
+    # Chercher d'abord dans fonts/ à côté du fichier (déploiement Railway)
+    here = os.path.dirname(os.path.abspath(__file__))
+    local = os.path.join(here, 'fonts')
+    system = '/usr/share/fonts/truetype/liberation'
+    base = local if os.path.isdir(local) else system
+    pdfmetrics.registerFont(TTFont('LS',            os.path.join(base, 'LiberationSans-Regular.ttf')))
+    pdfmetrics.registerFont(TTFont('LS-Bold',       os.path.join(base, 'LiberationSans-Bold.ttf')))
+    pdfmetrics.registerFont(TTFont('LS-Italic',     os.path.join(base, 'LiberationSans-Italic.ttf')))
+    pdfmetrics.registerFont(TTFont('LS-BoldItalic', os.path.join(base, 'LiberationSans-BoldItalic.ttf')))
     from reportlab.pdfbase.pdfmetrics import registerFontFamily
     registerFontFamily('LS', normal='LS', bold='LS-Bold',
                        italic='LS-Italic', boldItalic='LS-BoldItalic')
