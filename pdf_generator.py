@@ -78,8 +78,6 @@ EMOJI_CLEAN = {
     '🛑':'STOP', '🔄':'PIVOT', '✅':'OK',
     # Flèches → ASCII
     '→':'->', '←':'<-', '↑':'^', '↓':'v',
-    # Marques
-    '™':'(TM)', '®':'(R)',
     # Typographie — conserver le sens
     '\u2212':'-',    # − signe moins mathématique
     '\u2013':'-',    # – tiret demi-cadratin
@@ -94,34 +92,45 @@ EMOJI_CLEAN = {
     '\u2264':'<=',   # ≤
     '\u2265':'>=',   # ≥
     # GARDER les accents français — Liberation Sans les supporte
-    # NE PAS encoder/supprimer les caractères latins étendus
+    # GARDER € et ™ — Liberation Sans les supporte
 }
 
 def clean(s):
-    """Nettoyer le texte en préservant les accents français."""
+    """Nettoyer le texte en préservant accents, € et ™."""
     s = str(s)
     for k, v in EMOJI_CLEAN.items():
         s = s.replace(k, v)
-    # Supprimer uniquement les caractères de contrôle et emojis restants
-    # GARDER tout le latin étendu (accents français, etc.)
     result = []
     for ch in s:
         cp = ord(ch)
-        # Garder : ASCII imprimable + Latin étendu (0x00C0-0x024F) + espaces
-        if (0x20 <= cp <= 0x7E) or (0x00C0 <= cp <= 0x024F) or ch in ('\n', '\t'):
+        # Garder : ASCII imprimable
+        if 0x20 <= cp <= 0x7E:
             result.append(ch)
-        elif cp == 0x20AC:  # €
-            result.append('EUR')
-        elif cp == 0x00B0:  # °
-            result.append('')
-        elif cp == 0x00AB:  # «
+        # Garder : Latin étendu complet (accents français)
+        elif 0x00C0 <= cp <= 0x024F:
+            result.append(ch)
+        # Garder : € (euro)
+        elif cp == 0x20AC:
+            result.append('€')
+        # Garder : ™ (trademark)
+        elif cp == 0x2122:
+            result.append('\u2122')  # ™ direct
+        # Garder : ® (registered)
+        elif cp == 0x00AE:
+            result.append('\u00AE')
+        # Garder : guillemets typographiques → neutres
+        elif cp == 0x00AB:
             result.append('"')
-        elif cp == 0x00BB:  # »
+        elif cp == 0x00BB:
             result.append('"')
-        elif cp == 0x00B7:  # ·
+        # Garder : bullet → *
+        elif cp == 0x2022:
             result.append('*')
-        elif cp == 0x2022:  # •
+        elif cp == 0x00B7:
             result.append('*')
+        # Newlines et tabs
+        elif ch in ('\n', '\t'):
+            result.append(ch)
         # Ignorer le reste (emojis, CJK, etc.)
     return ''.join(result)
 
@@ -497,112 +506,162 @@ def pro_table(headers, rows, ratios=None):
 
 # ═══ COUVERTURE ═════════════════════════════════════════════
 def build_cover(c, nom, secteur, mode_label, date_str):
-    # FOND BLANC TOTAL
+    """Couverture McKinsey/BCG niveau — layout colonne gauche navy."""
+    # ── FOND BLANC TOTAL ──────────────────────────────────────
     c.setFillColor(WHITE)
     c.rect(0, 0, W, H, fill=1, stroke=0)
 
-    # ─── BANDE SUPÉRIEURE NAVY (40% de la page) ──────────────
-    band_h = H * 0.42
+    # ── BANDE GAUCHE NAVY PLEINE HAUTEUR ──────────────────────
+    side_w = W * 0.40
     c.setFillColor(NAVY)
-    c.rect(0, H - band_h, W, band_h, fill=1, stroke=0)
+    c.rect(0, 0, side_w, H, fill=1, stroke=0)
 
-    # Ligne accent or sous la bande navy
+    # Accent or vertical bord droit de la bande
     c.setFillColor(GOLD_ACC)
-    c.rect(0, H - band_h - 3, W, 3, fill=1, stroke=0)
+    c.rect(side_w, 0, 3, H, fill=1, stroke=0)
 
-    # Logo DECISIO dans la bande — très grand, blanc
+    # ── LOGO DECISIO (bande gauche, haut) ─────────────────────
     c.setFillColor(WHITE)
-    c.setFont('LS-Bold', 58)
-    c.drawString(ML, H - band_h + 62*mm, 'DECISIO')
+    c.setFont('LS-Bold', 38)
+    c.drawString(ML, H - 30*mm, 'DECISIO')
 
-    # Trait blanc fin sous DECISIO
     c.setFillColor(WHITE)
-    c.setFillAlpha(0.3)
-    c.rect(ML, H - band_h + 56*mm, CW, 0.8, fill=1, stroke=0)
+    c.setFillAlpha(0.2)
+    c.rect(ML, H - 34*mm, side_w - ML*2, 0.8, fill=1, stroke=0)
     c.setFillAlpha(1.0)
 
-    # Sous-titre dans la bande
     c.setFillColor(GOLD_ACC)
-    c.setFont('LS-Bold', 9)
-    c.drawString(ML, H - band_h + 48*mm, 'METHODE D3(TM)  |  FIRST PRINCIPLES  |  AI-POWERED 48H')
-
-    # Confidentiel + mode en haut à droite dans la bande
+    c.setFont('LS-Bold', 7)
+    c.drawString(ML, H - 40*mm, 'M\u00c9THODE D3\u2122')
     c.setFillColor(WHITE)
     c.setFillAlpha(0.55)
-    c.roundRect(W - MR - 68*mm, H - band_h + 72*mm, 68*mm, 10*mm, 2*mm, fill=1, stroke=0)
+    c.setFont('LS', 6.5)
+    c.drawString(ML, H - 47*mm, 'FIRST PRINCIPLES  \u2022  AI-POWERED 48H')
     c.setFillAlpha(1.0)
-    c.setFillColor(NAVY)
-    c.setFont('LS-Bold', 7.5)
-    c.drawCentredString(W - MR - 34*mm, H - band_h + 76.5*mm, clean(mode_label))
 
-    # ─── ZONE BLANCHE — INFO CLIENT ───────────────────────────
-    # Nom client (grand, noir)
+    # ── 3 PILIERS D3 (bande gauche, milieu) ───────────────────
+    piliers = [
+        ('01', 'DIAGNOSTIC',     'Analyse compl\u00e8te'),
+        ('02', 'D\u00c9CISION',      'Options scor\u00e9es'),
+        ('03', 'D\u00c9PLOIEMENT',   'Plan d\'action'),
+    ]
+    py_start = H * 0.50
+    pill_h = 26*mm
+    for i, (num, titre, desc) in enumerate(piliers):
+        py = py_start - i * pill_h
+        # Cercle doré
+        c.setFillColor(GOLD_ACC)
+        c.circle(ML + 4.5*mm, py + 2.5*mm, 4.5*mm, fill=1, stroke=0)
+        # Numéro dans cercle
+        c.setFillColor(NAVY)
+        c.setFont('LS-Bold', 7.5)
+        c.drawCentredString(ML + 4.5*mm, py + 0.5*mm, num)
+        # Titre
+        c.setFillColor(WHITE)
+        c.setFont('LS-Bold', 9.5)
+        c.drawString(ML + 13*mm, py + 3.5*mm, titre)
+        # Description
+        c.setFillColor(GOLD_ACC)
+        c.setFillAlpha(0.75)
+        c.setFont('LS', 7.5)
+        c.drawString(ML + 13*mm, py - 3*mm, desc)
+        c.setFillAlpha(1.0)
+
+    # ── FOOTER BANDE GAUCHE ────────────────────────────────────
+    c.setFillColor(WHITE)
+    c.setFillAlpha(0.15)
+    c.rect(0, 0, side_w, 20*mm, fill=1, stroke=0)
+    c.setFillAlpha(1.0)
+    c.setFillColor(GOLD_ACC)
+    c.setFont('LS-Bold', 7.5)
+    c.drawString(ML, 8*mm, 'decisio.agency')
+    c.setFillColor(WHITE)
+    c.setFillAlpha(0.55)
+    c.setFont('LS', 6.5)
+    c.drawString(ML, 3*mm, 'contact@decisio.agency')
+    c.setFillAlpha(1.0)
+
+    # ── ZONE DROITE ───────────────────────────────────────────
+    rx = side_w + 10*mm
+    rw = W - rx - MR
+
+    # Badge mode/prix (haut droite)
+    badge_w = 55*mm
+    badge_x = W - MR - badge_w
+    c.setFillColor(NAVY)
+    c.roundRect(badge_x, H - 22*mm, badge_w, 10*mm, 2*mm, fill=1, stroke=0)
+    c.setFillColor(GOLD_ACC)
+    c.setFont('LS-Bold', 7)
+    c.drawCentredString(badge_x + badge_w/2, H - 18.5*mm, clean(mode_label).upper())
+
+    # Nom client — grand
     c.setFillColor(NAVY)
     c.setFont('LS-Bold', 32)
-    c.drawString(ML, H - band_h - 24*mm, clean(nom))
+    nom_txt = clean(nom)
+    while c.stringWidth(nom_txt, 'LS-Bold', 32) > rw and len(nom_txt) > 5:
+        nom_txt = nom_txt[:-1]
+    c.drawString(rx, H - 52*mm, nom_txt)
+
+    # Trait accent or sous le nom
+    c.setFillColor(GOLD_ACC)
+    c.rect(rx, H - 56*mm, 22*mm, 2.5, fill=1, stroke=0)
 
     # Secteur
-    c.setFillColor(MID_GREY)
-    c.setFont('LS', 14)
-    c.drawString(ML, H - band_h - 34*mm, clean(secteur))
+    c.setFillColor(colors.HexColor('#444444'))
+    c.setFont('LS', 13)
+    c.drawString(rx, H - 65*mm, clean(secteur))
 
     # Date
     c.setFillColor(LIGHT_GREY)
     c.setFont('LS', 10)
-    c.drawString(ML, H - band_h - 43*mm, clean(date_str))
+    c.drawString(rx, H - 74*mm, clean(date_str))
 
-    # ─── LIGNE SÉPARATRICE ────────────────────────────────────
-    c.setStrokeColor(RULE)
+    # Ligne séparatrice légère
+    c.setStrokeColor(colors.HexColor('#DEDEDE'))
     c.setLineWidth(0.7)
-    c.line(ML, H - band_h - 50*mm, W - MR, H - band_h - 50*mm)
+    c.line(rx, H - 81*mm, W - MR, H - 81*mm)
 
-    # ─── 3 PILIERS D3 (colonne gauche) ───────────────────────
-    py = H - band_h - 75*mm
-    for i, (num, titre, desc) in enumerate([
-        ('01', 'DIAGNOSTIC', 'Analyse complète de la situation'),
-        ('02', 'DECISION', 'Options scorees et recommandation'),
-        ('03', 'DEPLOIEMENT', 'Plan d\'action semaine par semaine'),
-    ]):
-        px = ML + i * (CW / 3)
-        # Numéro
-        c.setFillColor(GOLD_ACC)
-        c.setFont('LS-Bold', 20)
-        c.drawString(px, py, num)
-        # Trait
-        c.setFillColor(GOLD_ACC)
-        c.rect(px, py - 4, 22*mm, 1.5, fill=1, stroke=0)
-        # Titre pilier
-        c.setFillColor(NAVY)
-        c.setFont('LS-Bold', 8.5)
-        c.drawString(px, py - 13, titre)
-        # Description
-        c.setFillColor(MID_GREY)
-        c.setFont('LS', 7.5)
-        c.drawString(px, py - 22, desc[:35])
+    # ── BLOC DESCRIPTIF AUDIT (centre droite) ─────────────────
+    bloc_y = H * 0.30
+    bloc_h = H * 0.30
+    c.setFillColor(colors.HexColor('#F5F7FA'))
+    c.roundRect(rx, bloc_y, rw, bloc_h, 3*mm, fill=1, stroke=0)
+    c.setStrokeColor(colors.HexColor('#DDE2EA'))
+    c.setLineWidth(0.6)
+    c.roundRect(rx, bloc_y, rw, bloc_h, 3*mm, fill=0, stroke=1)
 
-    # ─── LIGNE SÉPARATRICE 2 ─────────────────────────────────
-    c.setStrokeColor(RULE)
-    c.line(ML, H - band_h - 90*mm, W - MR, H - band_h - 90*mm)
-
-    # ─── NOTE CONFIDENTIELLE ─────────────────────────────────
-    c.setFillColor(MID_GREY)
-    c.setFont('LS', 8)
-    c.drawString(ML, H - band_h - 100*mm,
-        'Ce rapport est strictement confidentiel et destine au seul usage du client designe ci-dessus.')
-    c.drawString(ML, H - band_h - 109*mm,
-        'Toute reproduction ou diffusion est interdite sans autorisation ecrite de DECISIO AGENCY.')
-
-    # ─── PIED DE PAGE ────────────────────────────────────────
-    c.setFillColor(NAVY)
-    c.rect(0, 0, W, 18*mm, fill=1, stroke=0)
+    # Trait or gauche du bloc
     c.setFillColor(GOLD_ACC)
-    c.rect(0, 18*mm, W, 2, fill=1, stroke=0)
-    c.setFillColor(WHITE)
-    c.setFont('LS-Bold', 9)
-    c.drawString(ML, 7*mm, 'DECISIO AGENCY')
+    c.rect(rx, bloc_y, 3, bloc_h, fill=1, stroke=0)
+
+    # Titre du bloc
+    c.setFillColor(NAVY)
+    c.setFont('LS-Bold', 10.5)
+    c.drawString(rx + 8*mm, bloc_y + bloc_h - 11*mm, 'AUDIT STRAT\u00c9GIQUE PREMIUM')
+
+    # Trait sous titre
+    c.setFillColor(GOLD_ACC)
+    c.rect(rx + 8*mm, bloc_y + bloc_h - 14.5*mm, 28*mm, 1.5, fill=1, stroke=0)
+
+    # Prix grand
+    c.setFillColor(NAVY)
+    c.setFont('LS-Bold', 30)
+    c.drawString(rx + 8*mm, bloc_y + bloc_h - 32*mm, '2 490 \u20ac')
+
+    # Tagline sous prix
+    c.setFillColor(colors.HexColor('#555555'))
+    c.setFont('LS', 8)
+    c.drawString(rx + 8*mm, bloc_y + bloc_h - 40*mm,
+        'Livraison 48h  \u2022  M\u00e9thode D3\u2122  \u2022  Confidentiel')
+
+    # ── NOTE CONFIDENTIELLE (bas droite) ──────────────────────
+    cy = H * 0.26
     c.setFillColor(LIGHT_GREY)
-    c.setFont('LS', 7.5)
-    c.drawRightString(W - MR, 7*mm, 'decisio.agency  |  contact@decisio.agency')
+    c.setFont('LS', 7)
+    c.drawString(rx, cy,
+        'Ce rapport est strictement confidentiel et destin\u00e9 au seul usage du client d\u00e9sign\u00e9 ci-dessus.')
+    c.drawString(rx, cy - 9,
+        'Toute reproduction ou diffusion est interdite sans autorisation \u00e9crite de DECISIO AGENCY.')
 
 
 # ═══ PAGE CHROME (header/footer sur toutes pages) ════════════
@@ -644,7 +703,7 @@ class DecisioTemplate(SimpleDocTemplate):
         # Méthode
         c.setFillColor(GOLD_ACC)
         c.setFont('LS', 7.5)
-        c.drawString(ML + 24*mm, H - 8.5*mm, 'METHODE D3(TM)')
+        c.drawString(ML + 24*mm, H - 8.5*mm, 'M\u00c9THODE D3\u2122')
         # Client (droite)
         c.setFillColor(colors.HexColor('#AAAAAA'))
         c.setFont('LS', 7)
@@ -868,6 +927,7 @@ def generate_pdf(report_text, nom, secteur, mode, date_str=None):
     mode_label = labels.get(mode, 'AUDIT STRATEGIQUE PREMIUM  |  2 490 EUR')
 
     # ── COUVERTURE ──
+    register_fonts()  # Assurer polices dispo pour canvas
     buf_cover = BytesIO()
     c = pdf_canvas.Canvas(buf_cover, pagesize=A4)
     build_cover(c, nom, secteur, mode_label, date_str)
