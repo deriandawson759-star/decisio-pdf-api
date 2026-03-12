@@ -330,22 +330,22 @@ class VeritefBlock(Flowable):
     def draw(self):
         c = self.canv
         h = self.h
-        c.setFillColor(BG_GOLD)
+        # Fond navy plein — style McKinsey statement box
+        c.setFillColor(NAVY)
         c.rect(0, 0, self.w, h, fill=1, stroke=0)
-        # Bordure top et bottom or
+        # Barre or gauche épaisse
         c.setFillColor(GOLD_ACC)
-        c.rect(0, h-2, self.w, 2, fill=1, stroke=0)
-        c.rect(0, 0, self.w, 2, fill=1, stroke=0)
-        # Barre gauche
+        c.rect(0, 0, 5, h, fill=1, stroke=0)
+        # Ligne or top
         c.setFillColor(GOLD_ACC)
-        c.rect(0, 0, 4, h, fill=1, stroke=0)
+        c.rect(0, h-2.5, self.w, 2.5, fill=1, stroke=0)
         # Label
         c.setFillColor(GOLD_ACC)
-        c.setFont('LS-Bold', 7.5)
-        c.drawString(12, h - 14, 'VERITE FONDAMENTALE')
+        c.setFont('LS-Bold', 7)
+        c.drawString(13, h - 14, 'VÉRITÉ FONDAMENTALE')
         # Texte
-        c.setFillColor(NAVY)
-        c.setFont('LS-BoldItalic', 9.5)
+        c.setFillColor(WHITE)
+        c.setFont('LS-BoldItalic', 10)
         words = self.text.split()
         line = ''; y = h - 28
         cpl = int((self.w - 24) / 5.1)
@@ -458,6 +458,100 @@ class ScoreCard(Flowable):
 
     def wrap(self, aW, aH): return (aW, self.h + 3*mm)
 
+
+
+class FinancialBarChart(Flowable):
+    """Graphique barres M+1/M+3/M+6 style McKinsey — aujourd'hui vs projection"""
+    def __init__(self, data, width=CW):
+        # data = [(label, current, projected), ...]
+        self.data = data
+        self.w = width
+        self.h = 52*mm
+        Flowable.__init__(self)
+
+    def draw(self):
+        c = self.canv
+        w, h = self.w, self.h
+        pad_l, pad_r, pad_b, pad_t = 14*mm, 8*mm, 12*mm, 8*mm
+        chart_w = w - pad_l - pad_r
+        chart_h = h - pad_b - pad_t
+        n = len(self.data)
+        if n == 0: return
+
+        all_vals = [v for _, a, b in self.data for v in (a, b)]
+        max_val = max(all_vals) * 1.18
+        bar_group_w = chart_w / n
+        bar_w = bar_group_w * 0.28
+        gap = bar_group_w * 0.07
+
+        def vy(v): return pad_b + (v / max_val) * chart_h
+
+        # Grille horizontale légère
+        c.setStrokeColor(colors.HexColor('#EEEEEE'))
+        c.setLineWidth(0.4)
+        for step in [0.25, 0.5, 0.75, 1.0]:
+            y = pad_b + step * chart_h
+            c.line(pad_l, y, pad_l + chart_w, y)
+
+        # Axe Y label
+        c.setFillColor(LIGHT_GREY)
+        c.setFont('LS', 6)
+        for step in [0, 0.5, 1.0]:
+            val = int(max_val * step)
+            c.drawRightString(pad_l - 2, pad_b + step * chart_h - 2, f'{val:,}€'.replace(',', ' '))
+
+        # Barres
+        for i, (label, current, projected) in enumerate(self.data):
+            cx = pad_l + i * bar_group_w + bar_group_w * 0.18
+
+            # Barre Aujourd'hui (gris)
+            bh_curr = vy(current) - pad_b
+            c.setFillColor(colors.HexColor('#C8D0DC'))
+            c.roundRect(cx, pad_b, bar_w, bh_curr, 1, fill=1, stroke=0)
+
+            # Barre Projection (navy)
+            bh_proj = vy(projected) - pad_b
+            c.setFillColor(NAVY)
+            c.roundRect(cx + bar_w + gap, pad_b, bar_w, bh_proj, 1, fill=1, stroke=0)
+
+            # Valeur au dessus barres
+            c.setFont('LS-Bold', 6.5)
+            c.setFillColor(MID_GREY)
+            c.drawCentredString(cx + bar_w/2, pad_b + bh_curr + 2, f'{current:,}€'.replace(',', ' '))
+            c.setFillColor(GOLD_ACC)
+            c.drawCentredString(cx + bar_w + gap + bar_w/2, pad_b + bh_proj + 2, f'{projected:,}€'.replace(',', ' '))
+
+            # Gain +X€
+            gain = projected - current
+            c.setFillColor(GREEN_ACC)
+            c.setFont('LS-Bold', 6)
+            c.drawCentredString(cx + bar_w + gap/2 + bar_w/2, vy(projected) + 7, f'+{gain}€')
+
+            # Label axe X
+            c.setFillColor(CHARCOAL)
+            c.setFont('LS-Bold', 7.5)
+            c.drawCentredString(cx + bar_w + gap/2 + bar_w/2, pad_b - 8, label)
+
+        # Légende
+        leg_x = pad_l + chart_w * 0.62
+        leg_y = pad_b + chart_h + 2
+        c.setFillColor(colors.HexColor('#C8D0DC'))
+        c.rect(leg_x, leg_y, 8, 6, fill=1, stroke=0)
+        c.setFillColor(CHARCOAL)
+        c.setFont('LS', 6.5)
+        c.drawString(leg_x + 10, leg_y, "Aujourd'hui")
+        c.setFillColor(NAVY)
+        c.rect(leg_x + 52, leg_y, 8, 6, fill=1, stroke=0)
+        c.setFillColor(CHARCOAL)
+        c.drawString(leg_x + 62, leg_y, "Projection")
+
+        # Ligne axe bas
+        c.setStrokeColor(NAVY)
+        c.setLineWidth(1)
+        c.line(pad_l, pad_b, pad_l + chart_w, pad_b)
+        c.line(pad_l, pad_b, pad_l, pad_b + chart_h)
+
+    def wrap(self, aW, aH): return (aW, self.h)
 
 # ═══ TABLE PRO ═══════════════════════════════════════════════
 def pro_table(headers, rows, ratios=None):
@@ -711,16 +805,34 @@ class DecisioTemplate(SimpleDocTemplate):
 
     def _footer(self):
         c = self.canv
-        c.setStrokeColor(RULE)
-        c.setLineWidth(0.5)
-        c.line(ML, 13*mm, W - MR, 13*mm)
-        c.setFillColor(LIGHT_GREY)
+        # Bande navy footer
+        c.setFillColor(NAVY)
+        c.rect(0, 0, W, 11*mm, fill=1, stroke=0)
+        # Accent or haut
+        c.setFillColor(GOLD_ACC)
+        c.rect(0, 11*mm, W, 1.5, fill=1, stroke=0)
+        # Logo DECISIO gauche
+        c.setFillColor(WHITE)
+        c.setFont('LS-Bold', 8)
+        c.drawString(ML, 4*mm, 'DECISIO')
+        # Séparateur
+        c.setFillColor(GOLD_ACC)
+        c.setFillAlpha(0.6)
+        c.rect(ML + 19*mm, 3*mm, 0.5, 5*mm, fill=1, stroke=0)
+        c.setFillAlpha(1.0)
+        # Confidentiel centre
+        c.setFillColor(colors.HexColor('#AAAAAA'))
         c.setFont('LS', 6.5)
-        c.drawString(ML, 8*mm, 'CONFIDENTIEL — DECISIO AGENCY — decisio.agency')
-        # Numéro de page avec style
+        c.drawCentredString(W/2, 4*mm, 'CONFIDENTIEL  \u2022  DECISIO AGENCY  \u2022  M\u00e9thode D3\u2122')
+        # Numéro page — cercle or droite
+        pn = self._pn
+        cx = W - MR - 5*mm
+        cy = 5.5*mm
+        c.setFillColor(GOLD_ACC)
+        c.circle(cx, cy, 4.5*mm, fill=1, stroke=0)
         c.setFillColor(NAVY)
         c.setFont('LS-Bold', 8)
-        c.drawRightString(W - MR, 8*mm, f'— {self._pn} —')
+        c.drawCentredString(cx, cy - 2.5, str(pn))
 
 
 # ═══ PARSER MARKDOWN → FLOWABLES ════════════════════════════
@@ -820,7 +932,22 @@ def parse(text, ST):
             story.append(KeepTogether([VeritefBlock(vtext, CW), Spacer(1, 3*mm)]))
             i += 1; continue
 
-        # ── BLOCKQUOTE (Pourquoi) ──
+        # ── GRAPHIQUE FINANCIER ──
+        if line.startswith('CHART_BAR:'):
+            raw_data = line[len('CHART_BAR:'):]
+            chart_data = []
+            for seg in raw_data.split('|'):
+                parts = seg.split(':')
+                if len(parts) == 3:
+                    try:
+                        chart_data.append((parts[0], int(parts[1]), int(parts[2])))
+                    except: pass
+            if chart_data:
+                sp(2)
+                story.append(KeepTogether([FinancialBarChart(chart_data, CW), Spacer(1, 3*mm)]))
+            i += 1; continue
+
+                # ── BLOCKQUOTE (Pourquoi) ──
         if line.startswith('>') or line.startswith('->'):
             # Enlever le prefixe > ou ->
             if line.startswith('->'):
@@ -983,8 +1110,8 @@ def generate_pdf(report_text, nom, secteur, mode, date_str=None):
 
 # ═══ TEST ════════════════════════════════════════════════════
 if __name__ == '__main__':
-    SAMPLE = open('/home/claude/sample_report.txt').read()
+    SAMPLE = open('/home/claude/sample_report_v2.txt').read()
     pdf = generate_pdf(SAMPLE, 'Lucas Bernard', 'Electricien independant', 'premium', '11 mars 2026')
-    with open('/mnt/user-data/outputs/DECISIO_McKINSEY_V3.pdf', 'wb') as f:
+    with open('/mnt/user-data/outputs/DECISIO_McKINSEY_V7.pdf', 'wb') as f:
         f.write(pdf)
     print(f'OK — {len(pdf)//1024} KB — {len(open("/mnt/user-data/outputs/DECISIO_McKINSEY_V3.pdf","rb").read())//1024} KB')
