@@ -725,17 +725,17 @@ def generate_pdf(report_text, nom, secteur, mode, date_str=None):
     response = requests.post(
         'https://docraptor.com/docs',
         auth=(DOCRAPTOR_API_KEY, ''),
-        json={{
-            'doc': {{
+        json={
+            'doc': {
                 'document_content': html_content,
                 'document_type': 'pdf',
                 'test': False,
-                'prince_options': {{
+                'prince_options': {
                     'media': 'print',
                     'baseurl': 'https://decisio.agency',
-                }}
-            }}
-        }},
+                }
+            }
+        },
         timeout=60
     )
 
