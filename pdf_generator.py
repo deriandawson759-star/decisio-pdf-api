@@ -298,31 +298,16 @@ def build_html(report_text, nom, secteur, mode, date_str):
 
 @page content {{
   size: A4;
-  margin: 22mm 28mm 22mm 28mm;
-  @top-left {{
-    content: "DECISIO  ·  MÉTHODE D3™";
-    font-family: 'Source Sans 3', Arial, sans-serif;
-    font-size: 7.5pt; font-weight: 700; color: {NAVY};
-  }}
-  @top-right {{
-    content: "{clean(nom)}  ·  {clean(secteur)}";
-    font-family: 'Source Sans 3', Arial, sans-serif;
-    font-size: 7pt; color: {MUTED};
-  }}
-  @top-center {{
-    content: "";
-    border-bottom: 1px solid {BORDER};
-    width: 100%;
-  }}
-  @bottom-left {{
-    content: "CONFIDENTIEL  ·  DECISIO AGENCY";
-    font-family: 'Source Sans 3', Arial, sans-serif;
-    font-size: 7pt; color: {MUTED};
-  }}
+  margin: 26mm 28mm 22mm 28mm;
   @bottom-right {{
     content: counter(page);
-    font-family: 'Source Sans 3', Arial, sans-serif;
+    font-family: Arial, sans-serif;
     font-size: 8pt; font-weight: 700; color: {NAVY};
+  }}
+  @bottom-left {{
+    content: "CONFIDENTIEL  \00B7  DECISIO AGENCY";
+    font-family: Arial, sans-serif;
+    font-size: 7pt; color: {MUTED};
   }}
 }}
 
@@ -452,6 +437,31 @@ body {{
 
 /* ── CONTENU ──────────────────────────────────────── */
 .content {{ page: content; }}
+
+/* ── HEADER RÉPÉTÉ TOUTES LES PAGES ──────────────── */
+.page-header {{
+  position: running(pageHeader);
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 3mm;
+  border-bottom: 1px solid {BORDER};
+  margin-bottom: 0;
+}}
+.page-header-left {{
+  font-size: 7.5pt; font-weight: 700;
+  color: {NAVY}; letter-spacing: 0.05em;
+}}
+.page-header-right {{
+  font-size: 7pt; color: {MUTED};
+}}
+@page content {{
+  @top-center {{
+    content: element(pageHeader);
+    vertical-align: bottom;
+  }}
+}}
 
 .report-title {{
   font-family: 'Playfair Display', Georgia, serif;
@@ -702,6 +712,10 @@ ul.report-list li::before {{
 </div>
 
 <div class="content">
+<div class="page-header">
+  <span class="page-header-left">DECISIO &nbsp;·&nbsp; MÉTHODE D3™</span>
+  <span class="page-header-right">{clean(nom)} &nbsp;·&nbsp; {clean(secteur)}</span>
+</div>
   <h2 class="report-title">RAPPORT D'AUDIT STRATÉGIQUE — MÉTHODE D3™</h2>
   <p class="report-subtitle">{clean(nom)} &nbsp;·&nbsp; {clean(secteur)} &nbsp;·&nbsp; {clean(date_str)}</p>
   <hr class="title-rule-navy">
