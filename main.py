@@ -43,4 +43,7 @@ def gen_pdf():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port)with open("prompt_v4.txt", "r") as f:
+    base_prompt = f.read()
+
+full_prompt = base_prompt + "\n\nDonnées client:\n" + client_data
