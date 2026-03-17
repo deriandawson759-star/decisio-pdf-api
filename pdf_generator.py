@@ -10,8 +10,8 @@ Version propre complete - tous bugs corriges
 - ASCII uniquement pour eviter bugs encodage
 """
 import re
-import requests
 from datetime import datetime
+from weasyprint import HTML
 
 NAVY      = '#1C2B4A'
 GOLD      = '#C9A84C'
@@ -24,7 +24,6 @@ GREEN_ACC = '#1A7A45'
 BLUE_ACC  = '#2563A8'
 ORANGE    = '#C4621A'
 
-DOCRAPTOR_API_KEY = 'xwOLiOzjmLgknBf9eA8H'
 
 MODE_LABELS = {
     'flash':          'AUDIT FLASH - 490 EUR',
@@ -59,7 +58,6 @@ def clean(s):
     for k, v in replacements.items():
         s = s.replace(k, v)
     # Supprimer emojis et tout non-ASCII restant
-    s = s.encode('ascii', 'ignore').decode('ascii')
     return s.strip()
 
 
@@ -631,25 +629,5 @@ h1.h1 {{
 def generate_pdf(report_text, nom, secteur, mode, date_str=None):
     if not date_str:
         date_str = datetime.now().strftime('%d %B %Y')
-
     html_content = build_html(report_text, nom, secteur, mode, date_str)
-
-    response = requests.post(
-        'https://docraptor.com/docs',
-        auth=(DOCRAPTOR_API_KEY, ''),
-        json={
-            'doc': {
-                'document_content': html_content,
-                'document_type': 'pdf',
-                'test': False,
-                'prince_options': {
-                    'media': 'print',
-                    'baseurl': 'https://decisio.agency',
-                }
-            }
-        },
-        timeout=60
-    )
-
-    response.raise_for_status()
-    return response.content
+    return HTML(string=html_content, base_url='.').write_pdf()
