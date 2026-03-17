@@ -1,3 +1,8 @@
 [phases.setup]
-aptPkgs = ["fonts-liberation"]
+nixPkgs = ["python313", "gobject-introspection", "pango", "cairo", "glib", "fontconfig", "freetype", "harfbuzz"]
 
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[start]
+cmd = "gunicorn main:app --bind 0.0.0.0:$PORT"
