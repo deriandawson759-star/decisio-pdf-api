@@ -1,196 +1,687 @@
+# -*- coding: utf-8 -*-
 """
-DECISIO PDF Generator V12 - DocRaptor HTML/CSS
-Version propre complete - tous bugs corriges
-- Header horizontal propre sur chaque page
-- Footer sans caractere special
-- Tableaux proteges contre coupure
-- Scores visuels en barres de progression
-- Pages separatrices D3
-- Graphique CSS natif
-- ASCII uniquement pour eviter bugs encodage
+DECISIO PDF Generator V14 — ReportLab pur
+==========================================
+• Zéro dépendance système (pas de cairo/pango/gobject)
+• 100% Python — fonctionne sur Railway, Heroku, partout
+• UTF-8 complet : é è à ê ç ™ € · tous préservés
+• Page de garde navy/doré niveau cabinet conseil
+• Header/footer sur chaque page de contenu
+• Pages séparatrices D3 entre chaque partie
+• Tableaux protégés contre coupure
+• Scores visuels en barres de progression
+• Graphique financier natif
 """
+
 import re
 from datetime import datetime
-from weasyprint import HTML
+from io import BytesIO
 
-NAVY      = '#1C2B4A'
-GOLD      = '#C9A84C'
-LIGHT_BG  = '#F7F8FA'
-BORDER    = '#E2E5EB'
-TEXT      = '#1A1A2E'
-MUTED     = '#6B7280'
-RED_ACC   = '#C0392B'
-GREEN_ACC = '#1A7A45'
-BLUE_ACC  = '#2563A8'
-ORANGE    = '#C4621A'
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    BaseDocTemplate, Frame, HRFlowable, Image, NextPageTemplate,
+    PageBreak, PageTemplate, Paragraph, Spacer, Table, TableStyle,
+    KeepTogether
+)
+from reportlab.platypus.flowables import Flowable
+from reportlab.lib.colors import HexColor
 
+# ── Palette ──────────────────────────────────────────────────
+NAVY       = HexColor('#1C2B4A')
+GOLD       = HexColor('#C9A84C')
+LIGHT_BG   = HexColor('#F7F8FA')
+BORDER_C   = HexColor('#E2E5EB')
+TEXT_C     = HexColor('#1A1A2E')
+MUTED_C    = HexColor('#6B7280')
+RED_ACC    = HexColor('#C0392B')
+GREEN_ACC  = HexColor('#1A7A45')
+BLUE_ACC   = HexColor('#2563A8')
+ORANGE_C   = HexColor('#C4621A')
+WHITE_C    = colors.white
+BLACK_C    = colors.black
+
+PW, PH = A4  # 595.28 x 841.89 points
+ML, MR, MT, MB = 26*mm, 26*mm, 24*mm, 22*mm
+CW = PW - ML - MR  # content width
 
 MODE_LABELS = {
-    'flash':          'AUDIT FLASH - 490 EUR',
-    'premium':        'AUDIT PREMIUM - 2 490 EUR',
-    'transformation': 'AUDIT TRANSFORMATION - 6 900 EUR',
-    'redressement':   'AUDIT REDRESSEMENT - 9 900 EUR',
+    'flash':          'AUDIT FLASH · 490 €',
+    'premium':        'AUDIT STRATÉGIQUE PREMIUM · 2 490 €',
+    'transformation': 'AUDIT TRANSFORMATION · 6 900 €',
+    'redressement':   'AUDIT REDRESSEMENT · 9 900 €',
     'diagnostic':     'DIAGNOSTIC GRATUIT',
 }
-
 PRICE_MAP = {
-    'flash': '490 EUR',
-    'premium': '2 490 EUR',
-    'transformation': '6 900 EUR',
-    'redressement': '9 900 EUR',
-    'diagnostic': 'Gratuit',
+    'flash':          '490 €',
+    'premium':        '2 490 €',
+    'transformation': '6 900 €',
+    'redressement':   '9 900 €',
+    'diagnostic':     'Gratuit',
 }
 
 
+# ── Utilitaires texte ────────────────────────────────────────
+
 def clean(s):
-    """Nettoie le texte - supprime emojis et caracteres non-ASCII"""
     s = str(s)
-    # Remplacer les caracteres speciaux courants
-    replacements = {
-        '\u2014': ' - ', '\u2013': ' - ', '\u2026': '...',
-        '\u00d7': 'x', '\u00b7': '-', '\u2019': "'", '\u2018': "'",
-        '\u201c': '"', '\u201d': '"', '\u00e9': 'e', '\u00e8': 'e',
-        '\u00ea': 'e', '\u00eb': 'e', '\u00e0': 'a', '\u00e2': 'a',
-        '\u00f4': 'o', '\u00f9': 'u', '\u00fb': 'u', '\u00ee': 'i',
-        '\u00ef': 'i', '\u00e7': 'c', '\u00c9': 'E', '\u00c8': 'E',
-        '\u00c0': 'A', '\u00c7': 'C', '\u00d4': 'O', '\u00db': 'U',
-    }
-    for k, v in replacements.items():
-        s = s.replace(k, v)
-    # Supprimer emojis et tout non-ASCII restant
+    s = s.replace('\u2014', ' — ').replace('\u2013', ' – ')
+    s = s.replace('\u2018', '\u2019').replace('\u201c', '«').replace('\u201d', '»')
+    s = re.sub(
+        r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF'
+        r'\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF'
+        r'\U00002702-\U000027B0\U000024C2-\U0001F251]+',
+        '', s)
     return s.strip()
 
 
-def clean_html(s):
+def rl_escape(s):
+    """Échappe les caractères spéciaux ReportLab."""
     s = clean(s)
-    s = s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-    s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
-    s = re.sub(r'\*(.+?)\*', r'<em>\1</em>', s)
-    s = s.replace('&lt;strong&gt;', '<strong>').replace('&lt;/strong&gt;', '</strong>')
-    s = s.replace('&lt;em&gt;', '<em>').replace('&lt;/em&gt;', '</em>')
+    s = s.replace('&', '&amp;').replace('<', '&lt;').replace('>','&gt;')
     return s
 
 
+def md_to_rl(s):
+    """Convertit markdown basique en markup ReportLab."""
+    s = rl_escape(s)
+    s = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', s)
+    s = re.sub(r'\*(.+?)\*',     r'<i>\1</i>', s)
+    return s
+
+
+# ── Styles ───────────────────────────────────────────────────
+
+def make_styles():
+    base = getSampleStyleSheet()
+
+    def S(name, **kw):
+        return ParagraphStyle(name, **kw)
+
+    return {
+        'body': S('body',
+            fontName='Helvetica', fontSize=10.5, leading=17,
+            textColor=TEXT_C, alignment=TA_JUSTIFY,
+            spaceAfter=4*mm),
+
+        'h2': S('h2',
+            fontName='Helvetica-Bold', fontSize=10, leading=14,
+            textColor=WHITE_C, spaceAfter=4*mm, spaceBefore=9*mm),
+
+        'h3': S('h3',
+            fontName='Helvetica-Bold', fontSize=10.5, leading=14,
+            textColor=NAVY, spaceAfter=2.5*mm, spaceBefore=7*mm),
+
+        'h4': S('h4',
+            fontName='Helvetica-Bold', fontSize=10, leading=13,
+            textColor=NAVY, spaceAfter=2*mm, spaceBefore=5*mm),
+
+        'bullet': S('bullet',
+            fontName='Helvetica', fontSize=10.5, leading=17,
+            textColor=TEXT_C, leftIndent=5*mm, spaceAfter=2.5*mm),
+
+        'kv_key': S('kv_key',
+            fontName='Helvetica-Bold', fontSize=9, leading=13,
+            textColor=NAVY),
+
+        'kv_val': S('kv_val',
+            fontName='Helvetica', fontSize=9.5, leading=14,
+            textColor=TEXT_C),
+
+        'table_h': S('table_h',
+            fontName='Helvetica-Bold', fontSize=9, leading=12,
+            textColor=WHITE_C),
+
+        'table_c': S('table_c',
+            fontName='Helvetica', fontSize=9, leading=13,
+            textColor=TEXT_C),
+
+        'caption': S('caption',
+            fontName='Helvetica', fontSize=7.5, leading=10,
+            textColor=MUTED_C, alignment=TA_CENTER),
+
+        'quote': S('quote',
+            fontName='Helvetica-Oblique', fontSize=10, leading=15,
+            textColor=HexColor('#334466'), leftIndent=4*mm,
+            spaceAfter=3*mm),
+
+        'verite': S('verite',
+            fontName='Helvetica-BoldOblique', fontSize=11, leading=17,
+            textColor=WHITE_C, spaceAfter=0),
+
+        'footer': S('footer',
+            fontName='Helvetica', fontSize=7.5, leading=10,
+            textColor=MUTED_C, alignment=TA_CENTER),
+
+        'option_title': S('option_title',
+            fontName='Helvetica-Bold', fontSize=10, leading=13,
+            textColor=NAVY),
+
+        'option_detail': S('option_detail',
+            fontName='Helvetica', fontSize=8.5, leading=12,
+            textColor=MUTED_C),
+    }
+
+
+ST = make_styles()
+
+
+# ── Flowables personnalisés ──────────────────────────────────
+
+class ColorRect(Flowable):
+    """Rectangle coloré pleine largeur."""
+    def __init__(self, width, height, fill, radius=0):
+        super().__init__()
+        self.width  = width
+        self.height = height
+        self.fill   = fill
+        self.radius = radius
+
+    def draw(self):
+        self.canv.setFillColor(self.fill)
+        self.canv.roundRect(0, 0, self.width, self.height,
+                            self.radius, fill=1, stroke=0)
+
+
+class SectionHeader(Flowable):
+    """Bandeau de section coloré avec filet gauche."""
+    def __init__(self, text, color, width):
+        super().__init__()
+        self.text   = text
+        self.color  = color
+        self.width  = width
+        self.height = 10*mm
+
+    def draw(self):
+        c = self.canv
+        # Fond
+        c.setFillColor(LIGHT_BG)
+        c.rect(0, 0, self.width, self.height, fill=1, stroke=0)
+        # Filet gauche
+        c.setFillColor(self.color)
+        c.rect(0, 0, 5, self.height, fill=1, stroke=0)
+        # Texte
+        c.setFillColor(self.color)
+        c.setFont('Helvetica-Bold', 10)
+        c.drawString(8*mm, 3.5*mm, self.text.upper())
+
+    def wrap(self, aw, ah):
+        return self.width, self.height
+
+
+class ScoreBar(Flowable):
+    """Barre de progression pour les scores."""
+    def __init__(self, label, score, width, color=None):
+        super().__init__()
+        self.label  = label
+        self.score  = score
+        self.width  = width
+        self.height = 8*mm
+        if color:
+            self.color = color
+        elif score >= 7:
+            self.color = GREEN_ACC
+        elif score >= 5:
+            self.color = ORANGE_C
+        else:
+            self.color = RED_ACC
+
+    def draw(self):
+        c    = self.canv
+        pct  = self.score / 10
+        bw   = self.width * 0.6
+        bx   = self.width * 0.35
+        by   = 1.5*mm
+        bh   = 4*mm
+
+        # Label
+        c.setFillColor(TEXT_C)
+        c.setFont('Helvetica', 9)
+        c.drawString(0, by + 0.5*mm, self.label[:40])
+
+        # Track
+        c.setFillColor(BORDER_C)
+        c.roundRect(bx, by, bw, bh, 2, fill=1, stroke=0)
+
+        # Fill
+        c.setFillColor(self.color)
+        c.roundRect(bx, by, bw * pct, bh, 2, fill=1, stroke=0)
+
+        # Valeur
+        c.setFillColor(self.color)
+        c.setFont('Helvetica-Bold', 9)
+        c.drawRightString(self.width, by + 0.5*mm, f'{self.score}/10')
+
+    def wrap(self, aw, ah):
+        return self.width, self.height
+
+
+class BarChart(Flowable):
+    """Graphique barres financier navy/doré."""
+    def __init__(self, data, width):
+        super().__init__()
+        self.data   = data   # [(label, current, projected)]
+        self.width  = width
+        self.height = 55*mm
+
+    def draw(self):
+        c     = self.canv
+        n     = len(self.data)
+        max_v = max(v for _, a, b in self.data for v in (a, b)) * 1.15
+        max_h = 35*mm
+        col_w = self.width / n
+        bar_w = col_w * 0.25
+        base_y = 12*mm
+
+        for i, (label, current, projected) in enumerate(self.data):
+            cx = col_w * i + col_w * 0.15
+            px = col_w * i + col_w * 0.55
+
+            h_c = (current   / max_v) * max_h
+            h_p = (projected / max_v) * max_h
+
+            # Barre actuel
+            c.setFillColor(NAVY)
+            c.roundRect(cx, base_y, bar_w, h_c, 1, fill=1, stroke=0)
+            c.setFillColor(NAVY)
+            c.setFont('Helvetica-Bold', 6)
+            c.drawCentredString(cx + bar_w/2, base_y + h_c + 1*mm,
+                                f'{current:,} €')
+
+            # Barre projection
+            c.setFillColor(GOLD)
+            c.roundRect(px, base_y, bar_w, h_p, 1, fill=1, stroke=0)
+            c.setFillColor(HexColor('#7A6020'))
+            c.setFont('Helvetica-Bold', 6)
+            c.drawCentredString(px + bar_w/2, base_y + h_p + 1*mm,
+                                f'{projected:,} €')
+
+            # Label période
+            c.setFillColor(MUTED_C)
+            c.setFont('Helvetica-Bold', 8)
+            c.drawCentredString(col_w * i + col_w/2, 6*mm, label)
+
+        # Ligne de base
+        c.setStrokeColor(NAVY)
+        c.setLineWidth(1.5)
+        c.line(0, base_y, self.width, base_y)
+
+        # Légende
+        ly = 1*mm
+        c.setFillColor(NAVY)
+        c.roundRect(self.width/2 - 30*mm, ly, 4*mm, 3*mm, 1, fill=1, stroke=0)
+        c.setFillColor(TEXT_C)
+        c.setFont('Helvetica', 7.5)
+        c.drawString(self.width/2 - 24*mm, ly + 0.5*mm, "Aujourd'hui")
+
+        c.setFillColor(GOLD)
+        c.roundRect(self.width/2 + 5*mm, ly, 4*mm, 3*mm, 1, fill=1, stroke=0)
+        c.setFillColor(TEXT_C)
+        c.setFont('Helvetica', 7.5)
+        c.drawString(self.width/2 + 11*mm, ly + 0.5*mm, 'Projection')
+
+    def wrap(self, aw, ah):
+        return self.width, self.height
+
+
+class VeriteFondamentale(Flowable):
+    """Encadré vérité fondamentale navy/doré."""
+    def __init__(self, text, width):
+        super().__init__()
+        self.text   = text
+        self.width  = width
+        self.height = 28*mm
+
+    def draw(self):
+        c = self.canv
+        # Fond navy
+        c.setFillColor(NAVY)
+        c.roundRect(0, 0, self.width, self.height, 2, fill=1, stroke=0)
+        # Filet doré gauche
+        c.setFillColor(GOLD)
+        c.rect(0, 0, 5, self.height, fill=1, stroke=0)
+        # Label
+        c.setFillColor(GOLD)
+        c.setFont('Helvetica-Bold', 6.5)
+        c.drawString(8*mm, self.height - 7*mm, 'VÉRITÉ FONDAMENTALE')
+        # Texte
+        c.setFillColor(WHITE_C)
+        c.setFont('Helvetica-BoldOblique', 10.5)
+        # Wrap manuel
+        words = self.text.split()
+        line, lines_out = '', []
+        for w in words:
+            test = line + ' ' + w if line else w
+            if c.stringWidth(test, 'Helvetica-BoldOblique', 10.5) < self.width - 16*mm:
+                line = test
+            else:
+                lines_out.append(line)
+                line = w
+        if line:
+            lines_out.append(line)
+        y = self.height - 14*mm
+        for l in lines_out[:3]:
+            c.drawString(8*mm, y, l)
+            y -= 5.5*mm
+
+    def wrap(self, aw, ah):
+        return self.width, self.height
+
+
+class OptionBlock(Flowable):
+    """Bloc option A/B/C avec barre de score."""
+    def __init__(self, letter, title, detail, score, color, width):
+        super().__init__()
+        self.letter = letter
+        self.title  = title
+        self.detail = detail
+        self.score  = score
+        self.color  = color
+        self.width  = width
+        self.height = 24*mm
+
+    def draw(self):
+        c = self.canv
+        h = self.height
+        # Fond
+        c.setFillColor(LIGHT_BG)
+        c.roundRect(0, 0, self.width, h, 2, fill=1, stroke=0)
+        # Bordure gauche colorée
+        c.setFillColor(self.color)
+        c.roundRect(0, 0, 14*mm, h, 2, fill=1, stroke=0)
+        c.rect(6*mm, 0, 8*mm, h, fill=1, stroke=0)
+        # Lettre
+        c.setFillColor(WHITE_C)
+        c.setFont('Helvetica-Bold', 14)
+        c.drawCentredString(7*mm, h/2 - 2.5*mm, self.letter)
+        # Titre
+        c.setFillColor(NAVY)
+        c.setFont('Helvetica-Bold', 10)
+        c.drawString(16*mm, h - 8*mm, self.title[:55])
+        # Détail
+        c.setFillColor(MUTED_C)
+        c.setFont('Helvetica', 8.5)
+        c.drawString(16*mm, h - 13.5*mm, self.detail[:70])
+        # Barre score
+        bx = 16*mm
+        by = 3*mm
+        bw = self.width - 22*mm
+        bh = 4*mm
+        pct = min(self.score / 10, 1.0)
+        c.setFillColor(BORDER_C)
+        c.roundRect(bx, by, bw, bh, 2, fill=1, stroke=0)
+        c.setFillColor(self.color)
+        c.roundRect(bx, by, bw * pct, bh, 2, fill=1, stroke=0)
+        # Score texte
+        c.setFillColor(self.color)
+        c.setFont('Helvetica-Bold', 9)
+        c.drawRightString(self.width - 2*mm, by + 0.5*mm,
+                          f'{self.score}/10')
+
+    def wrap(self, aw, ah):
+        return self.width, self.height
+
+
+# ── Page de garde ────────────────────────────────────────────
+
+def draw_cover(canvas, nom, secteur, mode, date_str, price):
+    canvas.saveState()
+    w, h = A4
+
+    # Colonne gauche navy
+    canvas.setFillColor(NAVY)
+    canvas.rect(0, 0, w * 0.42, h, fill=1, stroke=0)
+
+    # Filet doré vertical
+    canvas.setFillColor(GOLD)
+    canvas.rect(w * 0.42, 0, 4, h, fill=1, stroke=0)
+
+    # Logo DECISIO
+    canvas.setFillColor(WHITE_C)
+    canvas.setFont('Helvetica-Bold', 30)
+    canvas.drawString(11*mm, h - 45*mm, 'DECISIO')
+
+    canvas.setFillColor(GOLD)
+    canvas.setFont('Helvetica-Bold', 6.5)
+    canvas.drawString(11*mm, h - 52*mm, 'MÉTHODE D3™')
+
+    canvas.setFillColor(HexColor('#FFFFFF55') if False else WHITE_C)
+    canvas.setFillColorRGB(1, 1, 1, 0.35)
+    canvas.setFont('Helvetica', 6)
+    canvas.drawString(11*mm, h - 57*mm, 'FIRST PRINCIPLES · AI-POWERED 48H')
+
+    # Étapes D3
+    steps = [('01', 'DIAGNOSTIC', 'Analyse complète'),
+             ('02', 'DÉCISION', 'Options scorées'),
+             ('03', 'DÉPLOIEMENT', "Plan d'action")]
+    y_step = 90*mm
+    for num, lbl, sub in steps:
+        # Cercle doré
+        canvas.setFillColor(GOLD)
+        canvas.circle(16*mm, y_step, 4.5*mm, fill=1, stroke=0)
+        canvas.setFillColor(NAVY)
+        canvas.setFont('Helvetica-Bold', 6.5)
+        canvas.drawCentredString(16*mm, y_step - 1.5*mm, num)
+        # Texte
+        canvas.setFillColor(WHITE_C)
+        canvas.setFont('Helvetica-Bold', 8.5)
+        canvas.drawString(22*mm, y_step + 1*mm, lbl)
+        canvas.setFillColor(GOLD)
+        canvas.setFont('Helvetica', 7)
+        canvas.drawString(22*mm, y_step - 4.5*mm, sub)
+        y_step -= 17*mm
+
+    # Contact
+    canvas.setFillColorRGB(1, 1, 1, 0.28)
+    canvas.setFont('Helvetica', 6)
+    canvas.drawString(11*mm, 12*mm, 'decisio.agency · contact@decisio.agency')
+
+    # ── Colonne droite ──
+    rx = w * 0.42 + 10*mm
+    rw = w - rx - 9*mm
+
+    # Badge mode
+    badge_text = clean(MODE_LABELS.get(mode, 'AUDIT PREMIUM'))
+    canvas.setFillColor(NAVY)
+    bw = canvas.stringWidth(badge_text, 'Helvetica-Bold', 6.5) + 10*mm
+    canvas.roundRect(w - bw - 9*mm, h - 22*mm, bw, 7*mm, 1.5, fill=1, stroke=0)
+    canvas.setFillColor(GOLD)
+    canvas.setFont('Helvetica-Bold', 6.5)
+    canvas.drawString(w - bw - 4*mm, h - 17.5*mm, badge_text)
+
+    # Nom client
+    canvas.setFillColor(NAVY)
+    canvas.setFont('Helvetica-Bold', 26)
+    nom_c = clean(nom)
+    # Réduire taille si trop long
+    fs = 26
+    while canvas.stringWidth(nom_c, 'Helvetica-Bold', fs) > rw and fs > 14:
+        fs -= 1
+    canvas.setFont('Helvetica-Bold', fs)
+    canvas.drawString(rx, h - 65*mm, nom_c)
+
+    # Filet doré
+    canvas.setFillColor(GOLD)
+    canvas.rect(rx, h - 70*mm, 22*mm, 2.5, fill=1, stroke=0)
+
+    # Secteur
+    canvas.setFillColor(HexColor('#444444'))
+    canvas.setFont('Helvetica', 13)
+    canvas.drawString(rx, h - 79*mm, clean(secteur))
+
+    # Date
+    canvas.setFillColor(MUTED_C)
+    canvas.setFont('Helvetica', 9)
+    canvas.drawString(rx, h - 86*mm, clean(date_str))
+
+    # Séparateur
+    canvas.setStrokeColor(BORDER_C)
+    canvas.setLineWidth(0.5)
+    canvas.line(rx, h - 93*mm, w - 9*mm, h - 93*mm)
+
+    # Encadré prix
+    box_y = 52*mm
+    box_h = 32*mm
+    canvas.setFillColor(LIGHT_BG)
+    canvas.roundRect(rx, box_y, rw, box_h, 2, fill=1, stroke=0)
+    canvas.setStrokeColor(BORDER_C)
+    canvas.setLineWidth(0.5)
+    canvas.roundRect(rx, box_y, rw, box_h, 2, fill=0, stroke=1)
+    canvas.setFillColor(GOLD)
+    canvas.rect(rx, box_y, 3, box_h, fill=1, stroke=0)
+
+    canvas.setFillColor(NAVY)
+    canvas.setFont('Helvetica-Bold', 7)
+    canvas.drawString(rx + 5*mm, box_y + box_h - 7*mm, 'AUDIT STRATÉGIQUE')
+
+    canvas.setFont('Helvetica-Bold', 24)
+    canvas.drawString(rx + 5*mm, box_y + box_h - 18*mm, clean(price))
+
+    canvas.setFillColor(MUTED_C)
+    canvas.setFont('Helvetica', 7.5)
+    canvas.drawString(rx + 5*mm, box_y + 5*mm,
+                      'Livraison 48h · Méthode D3™ · Confidentiel')
+
+    # Confidentialité
+    canvas.setFillColor(MUTED_C)
+    canvas.setFont('Helvetica', 6.5)
+    conf_text = ('Ce rapport est strictement confidentiel et destiné au seul usage '
+                 'du client désigné ci-dessus.')
+    canvas.drawString(rx, 32*mm, conf_text)
+    canvas.drawString(rx, 27*mm,
+                      'Toute reproduction est interdite sans autorisation écrite de DECISIO AGENCY.')
+
+    canvas.restoreState()
+
+
+# ── Page séparatrice ─────────────────────────────────────────
+
+def draw_partie(canvas, num, titre, color):
+    canvas.saveState()
+    w, h = A4
+    # Fond coloré
+    canvas.setFillColor(color)
+    canvas.rect(0, 0, w, h, fill=1, stroke=0)
+    # Numéro grand
+    canvas.setFillColorRGB(1, 1, 1, 0.10)
+    canvas.setFont('Helvetica-Bold', 100)
+    canvas.drawCentredString(w/2, h/2 + 10*mm, f'0{num}')
+    # Titre
+    canvas.setFillColor(WHITE_C)
+    canvas.setFont('Helvetica-Bold', 30)
+    canvas.drawCentredString(w/2, h/2 - 5*mm, titre.upper())
+    # Filet
+    canvas.setFillColor(HexColor('#FFFFFF66'))
+    canvas.rect(w/2 - 12*mm, h/2 - 12*mm, 24*mm, 2.5, fill=1, stroke=0)
+    # Sous-titre
+    canvas.setFillColorRGB(1, 1, 1, 0.40)
+    canvas.setFont('Helvetica-Bold', 7.5)
+    canvas.drawCentredString(w/2, h/2 - 19*mm, 'MÉTHODE D3™ · DECISIO AGENCY')
+    canvas.restoreState()
+
+
+# ── Header/Footer ────────────────────────────────────────────
+
+def make_header_footer(nom, secteur):
+    def on_page(canvas, doc):
+        canvas.saveState()
+        w = A4[0]
+        # Header — ligne navy + texte
+        y_h = A4[1] - MT + 5*mm
+        canvas.setStrokeColor(NAVY)
+        canvas.setLineWidth(1.5)
+        canvas.line(ML, y_h - 3*mm, w - MR, y_h - 3*mm)
+        canvas.setFillColor(NAVY)
+        canvas.setFont('Helvetica-Bold', 7.5)
+        canvas.drawString(ML, y_h, 'DECISIO · MÉTHODE D3™')
+        canvas.setFillColor(MUTED_C)
+        canvas.setFont('Helvetica', 7)
+        right_text = f'{clean(nom)} · {clean(secteur)}'
+        canvas.drawRightString(w - MR, y_h, right_text)
+        # Footer
+        y_f = MB - 5*mm
+        canvas.setStrokeColor(BORDER_C)
+        canvas.setLineWidth(0.5)
+        canvas.line(ML, y_f + 3*mm, w - MR, y_f + 3*mm)
+        canvas.setFillColor(MUTED_C)
+        canvas.setFont('Helvetica', 6.5)
+        canvas.drawString(ML, y_f,
+                          'CONFIDENTIEL · DECISIO AGENCY · MÉTHODE D3™')
+        canvas.setFillColor(NAVY)
+        canvas.setFont('Helvetica-Bold', 8)
+        canvas.drawRightString(w - MR, y_f, str(doc.page))
+        canvas.restoreState()
+    return on_page
+
+
+# ── Parser Markdown → Flowables ──────────────────────────────
+
 def section_color(txt):
     t = txt.upper()
-    if any(x in t for x in ['EXEC', 'SYNTH']): return GOLD
-    if any(x in t for x in ['QUICK', 'WIN', '48H']): return GREEN_ACC
-    if any(x in t for x in ['DIAG', 'PARTIE 1']): return RED_ACC
-    if any(x in t for x in ['DECIS', 'PARTIE 2']): return ORANGE
-    if any(x in t for x in ['DEPLOY', 'PARTIE 3']): return GREEN_ACC
+    if any(x in t for x in ['EXEC', 'SYNTH']):                     return GOLD
+    if any(x in t for x in ['QUICK', 'WIN', '48H']):               return GREEN_ACC
+    if any(x in t for x in ['DIAG', 'PARTIE 1']):                  return RED_ACC
+    if any(x in t for x in ['DÉCIS', 'DECIS', 'PARTIE 2']):        return ORANGE_C
+    if any(x in t for x in ['DÉPLOI', 'DEPLOY', 'PARTIE 3']):      return GREEN_ACC
+    if any(x in t for x in ['ALLER', 'PLUS LOIN']):                return BLUE_ACC
     return NAVY
 
 
-def score_bar(score_str):
-    try:
-        val = float(score_str.replace(',', '.'))
-        pct = int(val * 10)
-        color = GREEN_ACC if val >= 7 else (ORANGE if val >= 5 else RED_ACC)
-        return (
-            f'<div style="display:table;width:100%;margin-top:3px">'
-            f'<div style="display:table-cell;vertical-align:middle;width:85%">'
-            f'<div style="background:{BORDER};height:5px;border-radius:3px;overflow:hidden">'
-            f'<div style="background:{color};height:5px;width:{pct}%"></div>'
-            f'</div></div>'
-            f'<div style="display:table-cell;vertical-align:middle;padding-left:4px;'
-            f'font-size:9pt;font-weight:700;color:{color};white-space:nowrap">'
-            f'{score_str}/10</div>'
-            f'</div>'
-        )
-    except Exception:
-        return f'<span style="font-weight:700">{score_str}/10</span>'
-
-
-def render_chart(data):
-    if not data:
-        return ''
-    max_v = max(v for _, a, b in data for v in (a, b)) * 1.15
-    cols = ''
-    for label, current, projected in data:
-        pct_c = round(current / max_v * 100, 1)
-        pct_p = round(projected / max_v * 100, 1)
-        cols += (
-            f'<td style="vertical-align:bottom;text-align:center;padding:0 4px">'
-            f'<div style="display:inline-block;vertical-align:bottom;margin:0 2px">'
-            f'<div style="font-size:6.5pt;font-weight:600;color:{NAVY};margin-bottom:2px">{current:,}</div>'
-            f'<div style="width:14mm;background:{NAVY};height:{pct_c}%;border-radius:2px 2px 0 0;min-height:3px"></div>'
-            f'</div>'
-            f'<div style="display:inline-block;vertical-align:bottom;margin:0 2px">'
-            f'<div style="font-size:6.5pt;font-weight:600;color:#7A6020;margin-bottom:2px">{projected:,}</div>'
-            f'<div style="width:14mm;background:{GOLD};height:{pct_p}%;border-radius:2px 2px 0 0;min-height:3px"></div>'
-            f'</div>'
-            f'<div style="font-size:8pt;color:{MUTED};margin-top:3px;padding-top:2px;border-top:1px solid {BORDER}">{clean(label)}</div>'
-            f'</td>'
-        )
-    return (
-        f'<div style="page-break-inside:avoid;margin:6mm 0">'
-        f'<table style="width:100%;border-bottom:2px solid {NAVY};height:52mm">'
-        f'<tr>{cols}</tr>'
-        f'</table>'
-        f'<div style="text-align:center;font-size:8pt;color:{MUTED};margin-top:3mm">'
-        f'<span style="display:inline-block;width:8px;height:8px;background:{NAVY};border-radius:50%;margin-right:3px;vertical-align:middle"></span>Aujourd\'hui'
-        f'&nbsp;&nbsp;'
-        f'<span style="display:inline-block;width:8px;height:8px;background:{GOLD};border-radius:50%;margin-right:3px;vertical-align:middle"></span>Projection'
-        f'</div>'
-        f'</div>'
-    )
-
-
-def partie_break(num, titre, color):
-    return (
-        f'<div class="partie-break" style="background:{color}">'
-        f'<div class="partie-num">0{num}</div>'
-        f'<div class="partie-titre">{titre}</div>'
-        f'<div class="partie-rule"></div>'
-        f'<div class="partie-sub">METHODE D3 - DECISIO AGENCY</div>'
-        f'</div>'
-    )
-
-
-def parse_report(text):
-    lines = text.split('\n')
-    out = []
-    i = 0
+def parse_report(text, cw):
+    lines   = text.split('\n')
+    story   = []
+    i       = 0
 
     while i < len(lines):
-        raw = lines[i]
-        line = raw.strip()
+        line = lines[i].strip()
 
         if not line:
             i += 1
             continue
 
         if line == '---':
-            out.append(f'<hr style="border:none;border-top:1px solid {BORDER};margin:6mm 0">')
+            story.append(HRFlowable(width=cw, color=BORDER_C, thickness=0.5,
+                                    spaceAfter=4*mm))
             i += 1
             continue
 
-        # H1 - pages separatrices
+        # H1 → séparatrice
         m = re.match(r'^#\s+(.+)', line)
         if m:
-            txt = clean(m.group(1)).upper()
-            if 'PARTIE 1' in txt or 'DIAGNOSTIC' in txt:
-                out.append(partie_break(1, 'DIAGNOSTIC', RED_ACC))
-            elif 'PARTIE 2' in txt or 'DECISION' in txt:
-                out.append(partie_break(2, 'DECISION', ORANGE))
-            elif 'PARTIE 3' in txt or 'DEPLOIEMENT' in txt:
-                out.append(partie_break(3, 'DEPLOIEMENT', GREEN_ACC))
-            else:
-                out.append(f'<h1 class="h1">{clean(m.group(1))}</h1>')
+            t = clean(m.group(1)).upper()
+            if 'PARTIE 1' in t or 'DIAGNOSTIC' in t:
+                story += [NextPageTemplate('partie'),
+                          PageBreak(),
+                          _PartieFlowable(1, 'Diagnostic', RED_ACC),
+                          NextPageTemplate('content'),
+                          PageBreak()]
+            elif 'PARTIE 2' in t or 'DÉCISION' in t or 'DECISION' in t:
+                story += [NextPageTemplate('partie'),
+                          PageBreak(),
+                          _PartieFlowable(2, 'Décision', ORANGE_C),
+                          NextPageTemplate('content'),
+                          PageBreak()]
+            elif 'PARTIE 3' in t or 'DÉPLOIEMENT' in t or 'DEPLOIEMENT' in t:
+                story += [NextPageTemplate('partie'),
+                          PageBreak(),
+                          _PartieFlowable(3, 'Déploiement', GREEN_ACC),
+                          NextPageTemplate('content'),
+                          PageBreak()]
             i += 1
             continue
 
-        # H2 - section header
+        # H2
         m = re.match(r'^##\s+(.+)', line)
         if m:
-            txt = clean(m.group(1).upper())
+            txt   = clean(m.group(1))
             color = section_color(txt)
-            out.append(
-                f'<div style="background:{LIGHT_BG};border-left:6px solid {color};'
-                f'padding:4mm 5mm;margin:10mm 0 5mm;page-break-after:avoid">'
-                f'<span style="font-size:10.5pt;font-weight:700;letter-spacing:0.04em;color:{color}">{txt}</span>'
-                f'</div>'
-            )
+            story.append(KeepTogether([
+                SectionHeader(txt, color, cw),
+                Spacer(1, 1*mm)
+            ]))
             i += 1
             continue
 
@@ -198,436 +689,319 @@ def parse_report(text):
         m = re.match(r'^###\s+(.+)', line)
         if m:
             txt = clean(m.group(1))
-            out.append(
-                f'<div style="font-size:10.5pt;font-weight:700;color:{NAVY};'
-                f'margin:7mm 0 2.5mm;padding-bottom:1.5mm;border-bottom:2px solid {GOLD};'
-                f'page-break-after:avoid">{txt}</div>'
-            )
+            story.append(KeepTogether([
+                Spacer(1, 2*mm),
+                HRFlowable(width=cw, color=GOLD, thickness=2,
+                           spaceAfter=1.5*mm),
+                Paragraph(md_to_rl(txt), ST['h3']),
+            ]))
             i += 1
             continue
 
         # H4
         m = re.match(r'^####\s+(.+)', line)
         if m:
-            out.append(
-                f'<div style="font-size:10pt;font-weight:600;color:{NAVY};'
-                f'margin:5mm 0 1.5mm;page-break-after:avoid">{clean_html(m.group(1))}</div>'
-            )
+            story.append(Paragraph(md_to_rl(m.group(1)), ST['h4']))
             i += 1
             continue
 
-        # Verite fondamentale
-        if re.search(r'v.rit. fondamentale', line, re.I):
-            txt = re.sub(r'.*?v.rit. fondamentale\s*:?\s*', '', line, flags=re.I)
+        # Vérité fondamentale
+        if re.search(r'v[eé]rit[eé]\s+fondamentale', line, re.I):
+            txt = re.sub(r'.*?v[eé]rit[eé]\s+fondamentale\s*:?\s*',
+                         '', line, flags=re.I)
             txt = re.sub(r'^[#*>\[\]! ]+', '', txt).strip()
             if not txt and i + 1 < len(lines):
                 i += 1
                 txt = lines[i].strip()
-            out.append(
-                f'<div style="background:{NAVY};border-left:5px solid {GOLD};'
-                f'padding:5mm 7mm;margin:7mm 0;page-break-inside:avoid">'
-                f'<div style="font-size:7pt;font-weight:700;color:{GOLD};'
-                f'letter-spacing:0.15em;text-transform:uppercase;margin-bottom:3mm">VERITE FONDAMENTALE</div>'
-                f'<div style="font-size:11pt;font-weight:600;font-style:italic;color:white;line-height:1.6">{clean(txt)}</div>'
-                f'</div>'
-            )
+            story.append(Spacer(1, 2*mm))
+            story.append(VeriteFondamentale(clean(txt), cw))
+            story.append(Spacer(1, 4*mm))
             i += 1
             continue
 
         # KEY :: VALUE
         kv = re.match(r'\*\*(.+?)\*\*\s*::\s*(.*)', line)
         if kv:
-            out.append(
-                f'<div style="display:table;width:100%;padding:3mm 4mm;'
-                f'background:{LIGHT_BG};border-bottom:1px solid {BORDER};'
-                f'border-left:3px solid {GOLD};page-break-inside:avoid">'
-                f'<span style="display:table-cell;width:52mm;font-size:9pt;font-weight:700;color:{NAVY}">'
-                f'{clean(kv.group(1))}</span>'
-                f'<span style="display:table-cell;font-size:9.5pt;color:{TEXT}">'
-                f'{clean(kv.group(2))}</span>'
-                f'</div>'
+            tbl = Table(
+                [[Paragraph(md_to_rl(kv.group(1)), ST['kv_key']),
+                  Paragraph(md_to_rl(kv.group(2)), ST['kv_val'])]],
+                colWidths=[52*mm, cw - 52*mm]
             )
+            tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,-1), LIGHT_BG),
+                ('LEFTPADDING',  (0,0), (0,-1), 4*mm),
+                ('LEFTPADDING',  (1,0), (1,-1), 3*mm),
+                ('RIGHTPADDING', (0,0), (-1,-1), 3*mm),
+                ('TOPPADDING',   (0,0), (-1,-1), 3*mm),
+                ('BOTTOMPADDING',(0,0), (-1,-1), 3*mm),
+                ('LINEBELOW',    (0,0), (-1,-1), 0.5, BORDER_C),
+                ('LINEBEFORE',   (0,0), (0,-1), 3, GOLD),
+            ]))
+            story.append(tbl)
             i += 1
             continue
 
         # Blockquote
-        if line.startswith('>') or line.startswith('->'):
-            txt = re.sub(r'^-?>?\s*', '', line).strip()
-            out.append(
-                f'<div style="background:{LIGHT_BG};border-left:3px solid {BLUE_ACC};'
-                f'padding:3.5mm 5mm;margin:4mm 0;font-size:10pt;font-style:italic;'
-                f'color:#333;page-break-inside:avoid">{clean(txt)}</div>'
-            )
+        if line.startswith('>') or re.match(r'^-+>\s*', line):
+            txt = re.sub(r'^-*>\s*', '', line).strip()
+            story.append(Paragraph(md_to_rl(txt), ST['quote']))
             i += 1
             continue
 
         # Options A/B/C
-        opt = re.match(r'^OPTION\s+([A-C])\s*[-]?\s*(.{5,})', line, re.I)
+        opt = re.match(r'^OPTION\s+([A-C])\s*[-–—]?\s*(.{5,})', line, re.I)
         if opt:
-            letter = opt.group(1)
-            title = clean(opt.group(2).strip()[:80])
-            score_val = '?'
-            detail = ''
+            letter    = opt.group(1).upper()
+            title     = clean(opt.group(2).strip()[:70])
+            score_val = 5.0
+            detail    = ''
             j = i + 1
-            while j < len(lines) and j < i + 5:
+            while j < len(lines) and j < i + 6:
                 nl = lines[j].strip()
                 sm = re.search(r'Score\s*:\s*([\d,.]+)', nl, re.I)
                 if sm:
-                    score_val = sm.group(1)
+                    try:
+                        score_val = float(sm.group(1).replace(',', '.'))
+                    except Exception:
+                        pass
                     detail = re.sub(r'Score\s*:.*', '', nl).strip()
                     break
                 if nl:
-                    detail += clean(nl[:80]) + ' '
+                    detail += clean(nl[:70]) + ' '
                 j += 1
-            color = ORANGE
-            bar_html = score_bar(score_val)
-            out.append(
-                f'<div style="display:table;width:100%;background:{LIGHT_BG};'
-                f'border:1px solid {BORDER};border-left:6px solid {color};'
-                f'margin:3mm 0;page-break-inside:avoid">'
-                f'<div style="display:table-cell;width:12mm;background:{color};'
-                f'text-align:center;vertical-align:middle;font-weight:700;font-size:13pt;color:white;padding:4mm 3mm">'
-                f'{letter}</div>'
-                f'<div style="display:table-cell;padding:4mm 5mm;vertical-align:top">'
-                f'<div style="font-size:10pt;font-weight:700;color:{NAVY};margin-bottom:1.5mm">{title}</div>'
-                f'<div style="font-size:8.5pt;color:{MUTED};margin-bottom:2mm">{detail.strip()}</div>'
-                f'{bar_html}'
-                f'</div>'
-                f'</div>'
-            )
+            col_map = {'A': GREEN_ACC, 'B': ORANGE_C, 'C': RED_ACC}
+            col = col_map.get(letter, NAVY)
+            story.append(OptionBlock(letter, title, detail.strip(),
+                                     score_val, col, cw))
+            story.append(Spacer(1, 2*mm))
             i += 1
             continue
 
         # Message card
-        mm = re.match(r'^(Message\s+\d[^:]*)', line, re.I)
-        if mm:
-            label = clean(mm.group(1))
-            rest = line[len(mm.group(0)):].lstrip(': ').strip()
+        mm_m = re.match(r'^(Message\s+\d[^:]*)', line, re.I)
+        if mm_m:
+            label = clean(mm_m.group(1))
+            rest  = line[len(mm_m.group(0)):].lstrip(': ').strip()
             if not rest and i + 1 < len(lines):
                 i += 1
                 rest = lines[i].strip()
-            out.append(
-                f'<div style="background:#EEF4FF;border:1px solid #C7D9F5;'
-                f'border-left:4px solid {BLUE_ACC};border-radius:2mm;'
-                f'padding:4mm 6mm;margin:4mm 0;page-break-inside:avoid">'
-                f'<div style="font-size:7.5pt;font-weight:700;color:{BLUE_ACC};'
-                f'text-transform:uppercase;letter-spacing:0.08em;margin-bottom:2mm">{label}</div>'
-                f'<div style="font-size:10pt;font-style:italic;color:{TEXT};line-height:1.6">"{clean(rest)}"</div>'
-                f'</div>'
+            tbl = Table(
+                [[Paragraph(f'<font color="{BLUE_ACC.hexval()}" size="7">'
+                            f'<b>{rl_escape(label).upper()}</b></font>',
+                            ST['caption']),],
+                 [Paragraph(f'<i>« {md_to_rl(rest)} »</i>', ST['body'])]],
+                colWidths=[cw]
             )
+            tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,-1), HexColor('#EEF4FF')),
+                ('LINEBEFORE',  (0,0), (0,-1), 4, BLUE_ACC),
+                ('LEFTPADDING', (0,0), (-1,-1), 5*mm),
+                ('TOPPADDING',  (0,0), (-1,0), 3*mm),
+                ('BOTTOMPADDING',(0,-1),(-1,-1), 3*mm),
+                ('ROUNDEDCORNERS', [2]),
+            ]))
+            story.append(tbl)
+            story.append(Spacer(1, 3*mm))
             i += 1
             continue
 
         # Graphique
         if line.startswith('CHART_BAR:'):
-            raw_data = line[len('CHART_BAR:'):]
             chart_rows = []
-            for seg in raw_data.split('|'):
-                parts = seg.split(':')
+            for seg in line[len('CHART_BAR:'):].split('|'):
+                parts = seg.strip().split(':')
                 if len(parts) == 3:
                     try:
-                        chart_rows.append((parts[0], int(parts[1]), int(parts[2])))
+                        chart_rows.append((parts[0].strip(),
+                                           int(parts[1]),
+                                           int(parts[2])))
                     except Exception:
                         pass
             if chart_rows:
-                out.append(render_chart(chart_rows))
+                story.append(Spacer(1, 3*mm))
+                story.append(BarChart(chart_rows, cw))
+                story.append(Spacer(1, 3*mm))
             i += 1
             continue
 
         # Bullets
-        if re.match(r'^[-*]\s', line):
+        if re.match(r'^[-*•]\s', line):
             items = []
             while i < len(lines):
                 l = lines[i].strip()
-                if re.match(r'^[-*]\s', l):
-                    items.append(re.sub(r'^[-*]\s', '', l))
+                if re.match(r'^[-*•]\s', l):
+                    items.append(re.sub(r'^[-*•]\s+', '', l))
                     i += 1
                 else:
                     break
-            li_html = ''.join(
-                f'<li style="font-size:10.5pt;line-height:1.7;color:{TEXT};'
-                f'margin-bottom:3mm;padding-left:5mm;position:relative">'
-                f'<span style="position:absolute;left:0;top:6pt;display:inline-block;'
-                f'width:4px;height:4px;border-radius:50%;background:{GOLD}"></span>'
-                f'{clean_html(it)}</li>'
-                for it in items
-            )
-            out.append(f'<ul style="list-style:none;padding:0;margin:2mm 0 5mm">{li_html}</ul>')
+            for it in items:
+                p = Paragraph(
+                    f'<bullet color="{GOLD.hexval()}">●</bullet> {md_to_rl(it)}',
+                    ST['bullet']
+                )
+                story.append(p)
+            story.append(Spacer(1, 1*mm))
             continue
 
-        # Liste numerotee
-        if re.match(r'^\d+\.\s', line):
+        # Liste numérotée
+        if re.match(r'^\d+[.)]\s', line):
             items = []
             while i < len(lines):
                 l = lines[i].strip()
-                if re.match(r'^\d+\.\s', l):
-                    items.append(re.sub(r'^\d+\.\s', '', l))
+                if re.match(r'^\d+[.)]\s', l):
+                    items.append(re.sub(r'^\d+[.)]\s+', '', l))
                     i += 1
                 else:
                     break
-            li_html = ''.join(
-                f'<li style="font-size:10.5pt;line-height:1.7;color:{TEXT};margin-bottom:3mm">'
-                f'{clean_html(it)}</li>'
-                for it in items
-            )
-            out.append(f'<ol style="padding-left:6mm;margin:2mm 0 5mm">{li_html}</ol>')
+            for n, it in enumerate(items, 1):
+                p = Paragraph(f'{n}. {md_to_rl(it)}', ST['bullet'])
+                story.append(p)
+            story.append(Spacer(1, 1*mm))
             continue
 
-        # Tableau markdown
-        if line.startswith('|') and i + 1 < len(lines):
-            rows = []
-            is_first = True
+        # Tableau Markdown
+        if line.startswith('|'):
+            rows        = []
+            header_done = False
             while i < len(lines) and lines[i].strip().startswith('|'):
                 row_line = lines[i].strip()
-                if re.match(r'^\|[-| :]+\|$', row_line):
-                    is_first = False
+                if re.match(r'^\|[\s\-:|]+\|$', row_line):
+                    header_done = True
                     i += 1
                     continue
                 cells = [c.strip() for c in row_line.strip('|').split('|')]
-                rows.append((cells, is_first and len(rows) == 0))
+                rows.append((cells, not header_done and len(rows) == 0))
                 i += 1
-            html_rows = ''
-            for cells, is_header in rows:
-                if is_header:
-                    tds = ''.join(
-                        f'<th style="background:{NAVY};color:white;font-weight:700;'
-                        f'padding:3.5mm 4mm;text-align:left;border-top:2.5px solid {GOLD}">'
-                        f'{clean_html(c)}</th>'
-                        for c in cells
-                    )
-                else:
-                    tds = ''.join(
-                        f'<td style="padding:3mm 4mm;border-bottom:1px solid {BORDER};'
-                        f'color:{TEXT};line-height:1.5">{clean_html(c)}</td>'
-                        for c in cells
-                    )
-                html_rows += f'<tr>{tds}</tr>'
-            out.append(
-                f'<table style="width:100%;border-collapse:collapse;margin:4mm 0;'
-                f'font-size:9pt;page-break-inside:avoid">{html_rows}</table>'
-            )
+
+            if rows:
+                # Calculer largeurs colonnes équilibrées
+                n_cols = max(len(r) for r, _ in rows)
+                col_w  = [cw / n_cols] * n_cols
+
+                tbl_data = []
+                for cells, is_hdr in rows:
+                    # Padding si moins de colonnes
+                    while len(cells) < n_cols:
+                        cells.append('')
+                    style = ST['table_h'] if is_hdr else ST['table_c']
+                    tbl_data.append([Paragraph(md_to_rl(c), style)
+                                     for c in cells])
+
+                tbl = Table(tbl_data, colWidths=col_w, repeatRows=1)
+                ts  = TableStyle([
+                    ('BACKGROUND',   (0,0), (-1,0),  NAVY),
+                    ('LINEABOVE',    (0,0), (-1,0),  2.5, GOLD),
+                    ('ROWBACKGROUNDS', (0,1), (-1,-1),
+                     [WHITE_C, LIGHT_BG]),
+                    ('LINEBELOW',    (0,1), (-1,-1), 0.3, BORDER_C),
+                    ('LEFTPADDING',  (0,0), (-1,-1), 4*mm),
+                    ('RIGHTPADDING', (0,0), (-1,-1), 3*mm),
+                    ('TOPPADDING',   (0,0), (-1,-1), 3*mm),
+                    ('BOTTOMPADDING',(0,0), (-1,-1), 3*mm),
+                    ('VALIGN',       (0,0), (-1,-1), 'TOP'),
+                ])
+                tbl.setStyle(ts)
+                story.append(KeepTogether([tbl]))
+                story.append(Spacer(1, 3*mm))
             continue
 
         # Paragraphe normal
-        out.append(
-            f'<p style="font-size:10.5pt;color:{TEXT};line-height:1.8;'
-            f'text-align:justify;margin-bottom:4mm;orphans:3;widows:3">'
-            f'{clean_html(line)}</p>'
-        )
+        story.append(Paragraph(md_to_rl(line), ST['body']))
         i += 1
 
-    return '\n'.join(out)
+    return story
 
 
-def build_html(report_text, nom, secteur, mode, date_str):
-    mode_label = MODE_LABELS.get(mode, MODE_LABELS['premium'])
-    price = PRICE_MAP.get(mode, '2 490 EUR')
-    content_html = parse_report(report_text)
+class _PartieFlowable(Flowable):
+    """Flowable qui déclenche le dessin d'une page séparatrice."""
+    def __init__(self, num, titre, color):
+        super().__init__()
+        self.num   = num
+        self.titre = titre
+        self.color = color
+        self.width  = A4[0]
+        self.height = A4[1]
 
-    nom_c = clean(nom)
-    secteur_c = clean(secteur)
-    date_c = clean(date_str)
-    mode_c = clean(mode_label)
+    def draw(self):
+        draw_partie(self.canv, self.num, self.titre, self.color)
 
-    css = f"""
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Source+Sans+3:wght@300;400;600;700&display=swap');
-
-*, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-
-@page {{ size: A4; margin: 0; }}
-
-@page content {{
-  size: A4;
-  margin: 22mm 26mm 20mm 26mm;
-  @top-center {{
-    content: element(pageHeader);
-    width: 100%;
-    vertical-align: bottom;
-  }}
-  @bottom-left {{
-    content: "CONFIDENTIEL - DECISIO AGENCY";
-    font-family: Arial, sans-serif;
-    font-size: 7pt;
-    color: {MUTED};
-  }}
-  @bottom-right {{
-    content: counter(page);
-    font-family: Arial, sans-serif;
-    font-size: 8pt;
-    font-weight: 700;
-    color: {NAVY};
-  }}
-}}
-
-@page partie {{ size: A4; margin: 0; }}
-
-body {{
-  font-family: 'Source Sans 3', Arial, sans-serif;
-  font-size: 10.5pt;
-  color: {TEXT};
-  line-height: 1.75;
-  background: white;
-}}
-
-.cover {{
-  page: cover;
-  width: 210mm; height: 297mm;
-  display: flex;
-  page-break-after: always;
-}}
-.cover-left {{
-  width: 42%; background: {NAVY};
-  padding: 14mm 8mm 10mm 10mm;
-  display: flex; flex-direction: column;
-  justify-content: space-between;
-  position: relative;
-}}
-.cover-left::after {{
-  content: '';
-  position: absolute; right: 0; top: 0; bottom: 0;
-  width: 4px; background: {GOLD};
-}}
-.cover-right {{
-  flex: 1; padding: 12mm 9mm 10mm 11mm;
-  display: flex; flex-direction: column;
-}}
-
-.partie-break {{
-  page: partie;
-  width: 210mm; height: 297mm;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  page-break-before: always;
-  page-break-after: always;
-}}
-.partie-num {{
-  font-family: 'Playfair Display', Georgia, serif;
-  font-size: 80pt; font-weight: 900;
-  color: rgba(255,255,255,0.12); line-height: 1;
-}}
-.partie-titre {{
-  font-family: 'Playfair Display', Georgia, serif;
-  font-size: 32pt; font-weight: 700;
-  color: white; letter-spacing: 0.05em;
-  margin-top: -10mm;
-}}
-.partie-rule {{
-  width: 20mm; height: 3px;
-  background: rgba(255,255,255,0.4);
-  margin: 6mm 0;
-}}
-.partie-sub {{
-  font-size: 8pt; font-weight: 600;
-  color: rgba(255,255,255,0.4);
-  letter-spacing: 0.15em;
-}}
-
-.content {{ page: content; }}
-
-.page-header {{
-  position: running(pageHeader);
-  display: table;
-  width: 100%;
-  border-bottom: 1.5px solid {NAVY};
-  padding-bottom: 2.5mm;
-}}
-.page-header-left {{
-  display: table-cell;
-  font-family: Arial, sans-serif;
-  font-size: 7.5pt; font-weight: 700;
-  color: {NAVY}; letter-spacing: 0.06em;
-}}
-.page-header-right {{
-  display: table-cell;
-  text-align: right;
-  font-family: Arial, sans-serif;
-  font-size: 7pt; color: {MUTED};
-}}
-
-h1.h1 {{
-  font-family: 'Playfair Display', Georgia, serif;
-  font-size: 15pt; font-weight: 700; color: {NAVY};
-  margin: 9mm 0 4mm; page-break-after: avoid;
-}}
-"""
-
-    return f"""<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<title>DECISIO - Audit {nom_c}</title>
-<style>{css}</style>
-</head>
-<body>
-
-<div class="cover">
-  <div class="cover-left">
-    <div>
-      <div style="font-family:'Playfair Display',Georgia,serif;font-size:30pt;font-weight:900;color:white;line-height:1">DECISIO</div>
-      <div style="font-size:6.5pt;font-weight:700;color:{GOLD};letter-spacing:0.18em;text-transform:uppercase;margin-top:3mm">METHODE D3</div>
-      <div style="font-size:6pt;color:rgba(255,255,255,0.35);letter-spacing:0.07em;margin-top:2mm">FIRST PRINCIPLES - AI-POWERED 48H</div>
-    </div>
-    <div style="margin-top:auto;padding-top:8mm">
-      <div style="display:flex;align-items:flex-start;gap:4mm;margin-bottom:6mm">
-        <div style="width:8mm;height:8mm;border-radius:50%;background:{GOLD};display:flex;align-items:center;justify-content:center;font-size:6.5pt;font-weight:700;color:{NAVY};flex-shrink:0">01</div>
-        <div><div style="font-size:8.5pt;font-weight:700;color:white">DIAGNOSTIC</div><div style="font-size:7pt;color:{GOLD};opacity:0.8">Analyse complete</div></div>
-      </div>
-      <div style="display:flex;align-items:flex-start;gap:4mm;margin-bottom:6mm">
-        <div style="width:8mm;height:8mm;border-radius:50%;background:{GOLD};display:flex;align-items:center;justify-content:center;font-size:6.5pt;font-weight:700;color:{NAVY};flex-shrink:0">02</div>
-        <div><div style="font-size:8.5pt;font-weight:700;color:white">DECISION</div><div style="font-size:7pt;color:{GOLD};opacity:0.8">Options scorees</div></div>
-      </div>
-      <div style="display:flex;align-items:flex-start;gap:4mm;margin-bottom:6mm">
-        <div style="width:8mm;height:8mm;border-radius:50%;background:{GOLD};display:flex;align-items:center;justify-content:center;font-size:6.5pt;font-weight:700;color:{NAVY};flex-shrink:0">03</div>
-        <div><div style="font-size:8.5pt;font-weight:700;color:white">DEPLOIEMENT</div><div style="font-size:7pt;color:{GOLD};opacity:0.8">Plan d'action</div></div>
-      </div>
-    </div>
-    <div style="font-size:6.5pt;color:rgba(255,255,255,0.3)">decisio.agency - contact@decisio.agency</div>
-  </div>
-  <div class="cover-right">
-    <div style="align-self:flex-end;background:{NAVY};color:{GOLD};font-size:6.5pt;font-weight:700;letter-spacing:0.1em;padding:2.5mm 5mm;border-radius:1.5mm">{mode_c}</div>
-    <div style="font-family:'Playfair Display',Georgia,serif;font-size:26pt;font-weight:700;color:{NAVY};line-height:1.1;margin-top:16mm">{nom_c}</div>
-    <div style="width:20mm;height:2.5px;background:{GOLD};margin:4mm 0"></div>
-    <div style="font-size:13pt;color:#444;font-weight:300">{secteur_c}</div>
-    <div style="font-size:9pt;color:{MUTED};margin-top:2mm">{date_c}</div>
-    <hr style="border:none;border-top:1px solid {BORDER};margin:7mm 0">
-    <div style="background:{LIGHT_BG};border:1px solid {BORDER};border-left:3px solid {GOLD};border-radius:3mm;padding:6mm 7mm;margin-top:auto">
-      <div style="font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:{NAVY};margin-bottom:3mm">Audit Strategique</div>
-      <div style="font-family:'Playfair Display',Georgia,serif;font-size:24pt;font-weight:700;color:{NAVY};line-height:1">{price}</div>
-      <div style="font-size:7.5pt;color:{MUTED};margin-top:2mm">Livraison 48h - Methode D3 - Confidentiel</div>
-    </div>
-    <div style="font-size:6.5pt;color:{MUTED};margin-top:7mm;line-height:1.6">
-      Ce rapport est strictement confidentiel et destine au seul usage du client designe ci-dessus.
-      Toute reproduction est interdite sans autorisation ecrite de DECISIO AGENCY.
-    </div>
-  </div>
-</div>
-
-<div class="content">
-
-  <div class="page-header">
-    <span class="page-header-left">DECISIO - METHODE D3</span>
-    <span class="page-header-right">{nom_c} - {secteur_c}</span>
-  </div>
-
-  <div style="font-family:'Playfair Display',Georgia,serif;font-size:18pt;font-weight:700;color:{NAVY};text-align:center;line-height:1.25;margin-bottom:3mm">RAPPORT D'AUDIT STRATEGIQUE - METHODE D3</div>
-  <div style="font-size:9pt;color:{MUTED};text-align:center;margin-bottom:3mm">{nom_c} - {secteur_c} - {date_c}</div>
-  <hr style="border:none;border-top:2.5px solid {NAVY};margin:3mm 0 1.5mm">
-  <hr style="border:none;border-top:1px solid {GOLD};margin-bottom:9mm">
-
-  {content_html}
-
-  <div style="margin-top:12mm;padding-top:4mm;border-top:2px solid {NAVY};font-size:8pt;color:{MUTED};text-align:center;line-height:1.6">
-    Rapport strictement confidentiel - DECISIO AGENCY - Methode D3 - contact@decisio.agency
-  </div>
-
-</div>
-
-</body>
-</html>"""
+    def wrap(self, aw, ah):
+        return A4
 
 
-def generate_pdf(report_text, nom, secteur, mode, date_str=None):
+# ── Constructeur principal ───────────────────────────────────
+
+def generate_pdf(report_text, nom, secteur, mode='premium', date_str=None):
     if not date_str:
         date_str = datetime.now().strftime('%d %B %Y')
-    html_content = build_html(report_text, nom, secteur, mode, date_str)
-    return HTML(string=html_content, base_url='.').write_pdf()
+
+    price = PRICE_MAP.get(mode, '2 490 €')
+    buf   = BytesIO()
+    on_page = make_header_footer(nom, secteur)
+
+    # Templates de pages
+    cover_frame   = Frame(0, 0, PW, PH, leftPadding=0, rightPadding=0,
+                          topPadding=0, bottomPadding=0)
+    partie_frame  = Frame(0, 0, PW, PH, leftPadding=0, rightPadding=0,
+                          topPadding=0, bottomPadding=0)
+    content_frame = Frame(ML, MB, CW, PH - MT - MB,
+                          leftPadding=0, rightPadding=0,
+                          topPadding=0, bottomPadding=0)
+
+    def cover_bg(canvas, doc):
+        draw_cover(canvas, nom, secteur, mode, date_str, price)
+
+    def partie_bg(canvas, doc):
+        pass  # Dessiné par _PartieFlowable
+
+    doc = BaseDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=ML, rightMargin=MR,
+        topMargin=MT, bottomMargin=MB,
+    )
+    doc.addPageTemplates([
+        PageTemplate(id='cover',   frames=[cover_frame],
+                     onPage=cover_bg),
+        PageTemplate(id='partie',  frames=[partie_frame],
+                     onPage=partie_bg),
+        PageTemplate(id='content', frames=[content_frame],
+                     onPage=on_page),
+    ])
+
+    # Story
+    story = [NextPageTemplate('content'), PageBreak()]
+
+    # En-tête du rapport
+    story += [
+        Paragraph(
+            f'RAPPORT D\'AUDIT STRATÉGIQUE — MÉTHODE D3™',
+            ParagraphStyle('rh',
+                fontName='Helvetica-Bold', fontSize=17, leading=22,
+                textColor=NAVY, alignment=TA_CENTER, spaceAfter=3*mm)
+        ),
+        Paragraph(
+            f'{clean(nom)} · {clean(secteur)} · {clean(date_str)}',
+            ParagraphStyle('rs',
+                fontName='Helvetica', fontSize=9, leading=12,
+                textColor=MUTED_C, alignment=TA_CENTER, spaceAfter=3*mm)
+        ),
+        HRFlowable(width=CW, color=NAVY, thickness=2.5, spaceAfter=1.5*mm),
+        HRFlowable(width=CW, color=GOLD, thickness=1, spaceAfter=9*mm),
+    ]
+
+    # Contenu parsé
+    story += parse_report(report_text, CW)
+
+    # Footer rapport
+    story += [
+        Spacer(1, 10*mm),
+        HRFlowable(width=CW, color=NAVY, thickness=2, spaceAfter=3*mm),
+        Paragraph(
+            'Rapport strictement confidentiel — DECISIO AGENCY · '
+            'Méthode D3™ · contact@decisio.agency',
+            ST['footer']
+        ),
+    ]
+
+    doc.build(story)
+    return buf.getvalue()

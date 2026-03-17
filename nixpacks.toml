@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python313", "gobject-introspection", "pango", "cairo", "glib", "fontconfig", "freetype", "harfbuzz"]
+nixPkgs = ["python313", "fontconfig", "freetype"]
 
 [phases.install]
 cmds = ["pip install -r requirements.txt"]
