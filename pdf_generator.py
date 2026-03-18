@@ -648,15 +648,10 @@ def parse_report(text, cw):
             i += 1
             continue
 
-        # H1 → séparatrice (# PARTIE, ■ PARTIE, PARTIE X)
-        _h1 = re.match(r'^#\s+(.+)', line)
-        _p2 = re.match(r'^[■●▶•]+\s*(PARTIE\s+[123].+)', line, re.I)
-        _p3 = None
-        if not line.startswith('|') and not _h1 and not _p2:
-            _p3 = re.match(r'^(PARTIE\s+[123]\b.+)', line, re.I)
-        m = _h1 or _p2 or _p3
+        # H1 → séparatrice
+        m = re.match(r'^#\s+(.+)', line)
         if m:
-            t = clean(_h1.group(1) if _h1 else (_p2.group(1) if _p2 else _p3.group(1))).upper()
+            t = clean(m.group(1)).upper()
             if 'PARTIE 1' in t or 'DIAGNOSTIC' in t:
                 story += [NextPageTemplate('partie'),
                           PageBreak(),
@@ -675,10 +670,6 @@ def parse_report(text, cw):
                           _PartieFlowable(3, 'Déploiement', GREEN_ACC),
                           NextPageTemplate('content'),
                           PageBreak()]
-            else:
-                story.append(Paragraph(md_to_rl(t.title()),
-                    ParagraphStyle('h1x', fontName='Helvetica-Bold', fontSize=14,
-                                   leading=20, textColor=NAVY, spaceAfter=4*mm)))
             i += 1
             continue
 
@@ -780,28 +771,8 @@ def parse_report(text, cw):
                 j += 1
             col_map = {'A': GREEN_ACC, 'B': ORANGE_C, 'C': RED_ACC}
             col = col_map.get(letter, NAVY)
-            lp = Paragraph(
-                '<font color="white" size="14"><b>' + letter + '</b></font>',
-                ParagraphStyle('ol', alignment=1, leading=20))
-            bp = [
-                Paragraph('<font size="10"><b>' + rl_escape(title) + '</b></font>',
-                          ParagraphStyle('ot', leading=14, textColor=NAVY, spaceAfter=2*mm)),
-                Paragraph('<font size="8">' + rl_escape(detail.strip()) + '</font>',
-                          ParagraphStyle('od', leading=12, textColor=MUTED_C, spaceAfter=2*mm)),
-                Paragraph('<font size="9"><b>' + str(score_val) + '/10</b></font>',
-                          ParagraphStyle('os', leading=11, textColor=col)),
-            ]
-            opt_tbl = Table([[lp, bp]], colWidths=[14*mm, cw - 14*mm])
-            opt_tbl.setStyle(TableStyle([
-                ('BACKGROUND',    (0, 0), (0, -1), col),
-                ('BACKGROUND',    (1, 0), (1, -1), LIGHT_BG),
-                ('VALIGN',        (0, 0), (-1, -1), 'MIDDLE'),
-                ('LEFTPADDING',   (0, 0), (0, -1), 3*mm),
-                ('LEFTPADDING',   (1, 0), (1, -1), 4*mm),
-                ('TOPPADDING',    (0, 0), (-1, -1), 3*mm),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 3*mm),
-            ]))
-            story.append(KeepTogether([opt_tbl]))
+            story.append(OptionBlock(letter, title, detail.strip(),
+                                     score_val, col, cw))
             story.append(Spacer(1, 2*mm))
             i += 1
             continue
@@ -932,23 +903,6 @@ def parse_report(text, cw):
                 tbl.setStyle(ts)
                 story.append(KeepTogether([tbl]))
                 story.append(Spacer(1, 3*mm))
-                _chart = []
-                for _c2, _h2 in rows:
-                    if _h2 or not _c2:
-                        continue
-                    if re.match(r'M\+[136]', _c2[0].strip()):
-                        try:
-                            def _pn(s):
-                                s = re.sub(r'[€\s+,]', '', str(s).strip())
-                                return int(float(re.sub(r'[^0-9.]', '', s) or '0'))
-                            if len(_c2) >= 3:
-                                _chart.append((_c2[0].strip(), _pn(_c2[1]), _pn(_c2[2])))
-                        except Exception:
-                            pass
-                if len(_chart) >= 2:
-                    story.append(Spacer(1, 2*mm))
-                    story.append(BarChart(_chart, cw))
-                    story.append(Spacer(1, 3*mm))
             continue
 
         # Paragraphe normal
