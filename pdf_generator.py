@@ -1598,12 +1598,15 @@ def build_story():
 # ─────────────────────────────────────────────
 # MAIN BUILD
 # ─────────────────────────────────────────────
-def generate_pdf(output_path):
-    # 1. Generate cover page
+def generate_pdf(report_text=None, nom="Client", secteur="", mode="premium", date_str=None):
+    import tempfile, os
+    if nom: CLIENT["nom"] = nom
+    if secteur: CLIENT["metier"] = secteur
+    if date_str: CLIENT["date"] = date_str
     cover_buf = make_cover()
-
-    # 2. Generate content pages
-    content_path = output_path.replace('.pdf', '_content.pdf')
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    tmp.close()
+    content_path = tmp.name
 
     doc = SimpleDocTemplate(
         content_path,
