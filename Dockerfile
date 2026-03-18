@@ -7,5 +7,5 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-EXPOSE 8080
-CMD ["/bin/sh", "-c", "gunicorn main:app --bind 0.0.0.0:${PORT:-8080} --workers 1 --timeout 120"]
+RUN chmod +x start.sh
+CMD ["./start.sh"]
