@@ -1598,57 +1598,34 @@ def build_story():
 # ─────────────────────────────────────────────
 # MAIN BUILD
 # ─────────────────────────────────────────────
-def generate_pdf(report_text=None, nom="Client", secteur="", mode="premium", date_str=None):
+def generate_pdf(report_text=None, nom='Client', secteur='', mode='premium', date_str=None):
     import tempfile, os
-    if nom: CLIENT["nom"] = nom
-    if secteur: CLIENT["metier"] = secteur
-    if date_str: CLIENT["date"] = date_str
+    if nom: CLIENT['nom'] = nom
+    if secteur: CLIENT['metier'] = secteur
+    if date_str: CLIENT['date'] = date_str
     cover_buf = make_cover()
-    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    tmp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
     tmp.close()
     content_path = tmp.name
-
     doc = SimpleDocTemplate(
-        content_path,
-        pagesize=A4,
-        leftMargin=40,
-        rightMargin=40,
-        topMargin=45,
-        bottomMargin=45,
-        title=f"DECISIO — Audit Stratégique — {CLIENT['nom']}",
-        author="DECISIO AGENCY",
-        subject="Audit Stratégique Premium D3™",
+        content_path, pagesize=A4,
+        leftMargin=40, rightMargin=40, topMargin=45, bottomMargin=45,
+        title="DECISIO Audit", author="DECISIO AGENCY",
     )
-
     story = build_story()
     doc.build(story, onFirstPage=header_footer, onLaterPages=header_footer)
-
-    # 3. Merge cover + content
     from pypdf import PdfWriter, PdfReader
-
     writer = PdfWriter()
-
-    # Cover
     cover_buf.seek(0)
-    cover_reader = PdfReader(cover_buf)
-    writer.add_page(cover_reader.pages[0])
-
-    # Content
-    content_reader = PdfReader(content_path)
-    for page in content_reader.pages:
+    for page in PdfReader(cover_buf).pages:
         writer.add_page(page)
-
-    with open(output_path, 'wb') as f:
-        writer.write(f)
-
-    # Cleanup
-    import os
-    if os.path.exists(content_path):
-        os.remove(content_path)
-
-    print(f"✅ DECISIO V17 generated: {output_path}")
-    print(f"   Pages: {len(writer.pages)}")
-
+    for page in PdfReader(content_path).pages:
+        writer.add_page(page)
+    output_buf = BytesIO()
+    writer.write(output_buf)
+    output_buf.seek(0)
+    os.remove(content_path)
+    return output_buf.read()
 
 if __name__ == '__main__':
     generate_pdf('/home/claude/DECISIO_Audit_Lucas_Bernard_V17.pdf')
