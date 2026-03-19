@@ -13,6 +13,8 @@ import traceback
 from ai_analyzer import analyze_business
 from pdf_generator import generate_pdf_from_data
 from scoring import calculate_scores
+from database import save_prospect, save_audit, list_prospects, list_audits
+from notifications import notify_new_prospect
 
 app = Flask(__name__)
 CORS(app, origins=[
@@ -74,6 +76,14 @@ def generate_pdf_endpoint():
         # Génération PDF via Playwright
         pdf_bytes = generate_pdf_from_data(data, analysis, scores, mode)
 
+        # Persistance Supabase (non-bloquante)
+        prospect_row = save_prospect(data)
+        prospect_id  = prospect_row.get('id') if prospect_row else None
+        save_audit(prospect_id, analysis, scores, data)
+
+        # Notification équipe (non-bloquante)
+        notify_new_prospect(data, scores)
+
         slug     = nom.replace(' ', '_')[:20]
         filename = f"DECISIO_Audit_{slug}.pdf"
 
@@ -105,6 +115,28 @@ def analyze_only():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+# ─────────────────────────────────────────
+# PROSPECTS — LISTE
+# ─────────────────────────────────────────
+
+@app.route('/prospects', methods=['GET'])
+def get_prospects():
+    """Retourne la liste des derniers prospects (nécessite SUPABASE_*)."""
+    limit = min(int(request.args.get('limit', 50)), 200)
+    return jsonify({"success": True, "prospects": list_prospects(limit)})
+
+
+# ─────────────────────────────────────────
+# AUDITS — LISTE
+# ─────────────────────────────────────────
+
+@app.route('/audits', methods=['GET'])
+def get_audits():
+    """Retourne la liste des derniers audits (nécessite SUPABASE_*)."""
+    limit = min(int(request.args.get('limit', 50)), 200)
+    return jsonify({"success": True, "audits": list_audits(limit)})
 
 
 # ─────────────────────────────────────────
